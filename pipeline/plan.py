@@ -82,10 +82,13 @@ def build_format(fmt: str, items: list[dict], music: dict, cards: dict) -> dict:
     beats = [round(b - m_start, 3) for b in music["beats"] if m_start <= b <= m_end]
     if len(beats) < 2:
         raise ValueError(f"{fmt}: 음악에서 비트를 찾지 못했습니다 — 다른 곡을 골라주세요")
-    intro_end = max((b for b in beats if b <= INTRO_SECONDS), default=INTRO_SECONDS)
+    intro_end = max((b for b in beats if b <= INTRO_SECONDS), default=0.0)
     if intro_end < MIN_INTRO_SECONDS:
         intro_end = next((b for b in beats if b >= MIN_INTRO_SECONDS), INTRO_SECONDS)
-    shots, dropped = fit(items, beats, intro_end, (m_end - m_start) - OUTRO_SECONDS, spec["beats_per_photo"])
+    interval = statistics.median([b - a for a, b in zip(beats, beats[1:])])
+    usable = [it for it in items if it["type"] != "video" or it["duration"] >= interval]  # 한 비트보다 짧은 영상은 제외
+    shots, dropped = fit(usable, beats, intro_end, (m_end - m_start) - OUTRO_SECONDS, spec["beats_per_photo"])
+    dropped += len(items) - len(usable)
     if not shots:
         raise ValueError(f"{fmt}: 넣을 수 있는 장면이 없습니다 — 곡이 너무 짧거나 고른 항목이 없습니다")
     content_end = shots[-1]["end"]

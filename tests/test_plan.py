@@ -118,3 +118,18 @@ def test_build_storyboard_shape():
     sel = {"title": "제주", "ending": "끝", "formats": ["youtube"], "items": [{"id": 0}, {"id": 1}]}
     sb = build_storyboard(sel, CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS})
     assert sb["fps"] == 30 and sb["music"] == "music/s.mp3" and list(sb["formats"]) == ["youtube"]
+
+
+def test_late_first_beat_leaves_no_gap_after_intro():
+    late = dict(MUSIC, beats=[4.0 + 0.5 * i for i in range(200)], downbeats=[])
+    shots = build_format("youtube", [photo(i) for i in range(5)], late, CARDS)["shots"]
+    assert shots[0]["end"] == shots[1]["start"] == 4.0
+    for a, b in zip(shots, shots[1:]):
+        assert a["end"] == pytest.approx(b["start"])
+
+
+def test_sub_beat_video_is_dropped_and_counted():
+    items = [photo(0), video(dur=0.3, vin=0.0, vout=0.3), photo(1)]
+    plan = build_format("youtube", items, MUSIC, CARDS)
+    assert not [s for s in plan["shots"] if s["type"] == "video"]
+    assert plan["dropped"] == 1
