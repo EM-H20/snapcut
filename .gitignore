@@ -1,0 +1,16 @@
+# 개인 미디어 — 절대 커밋하지 않음 (용량 + 사생활)
+projects/
+공용/음악/
+
+# 생성물
+node_modules/
+.venv/
+__pycache__/
+out/
+*.mp4
+*.mov
+
+.DS_Store
+
+# superpowers 작업 문서 (로컬 전용)
+docs/superpowers/
