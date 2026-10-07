@@ -29,6 +29,20 @@ def test_suggest_clamps_to_clip_and_short_clip():
     assert suggest_segment(2.0, [], []) == {"in": 0.0, "out": 2.0, "liveAudio": False}
 
 
+def test_suggest_segment_rounding_stays_in_bounds_nonround_duration():
+    # Ensure out doesn't exceed duration after rounding
+    result = suggest_segment(10.037, [(0.0, 10.037)], [(9.5, 10.037)])
+    assert result["out"] <= 10.037
+    assert abs((result["out"] - result["in"]) - 4.0) <= 0.01
+
+
+def test_suggest_segment_short_nonround_duration():
+    # Ensure out stays within bounds for short nonround durations
+    result = suggest_segment(3.996, [], [])
+    assert result["in"] == 0.0
+    assert result["out"] <= 3.996
+
+
 def test_analyze_clips_on_sample(sample_project):
     proj = Project(sample_project)
     convert_project(proj)

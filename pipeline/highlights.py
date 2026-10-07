@@ -40,7 +40,9 @@ def suggest_segment(duration: float, scenes, loud, max_len: float = MAX_SEGMENT)
         s, e = max(scenes, key=lambda x: x[1] - x[0]) if scenes else (0.0, duration)
         live = False
     start = min(max(0.0, (s + e) / 2 - length / 2), duration - length)
-    return {"in": round(start, 2), "out": round(start + length, 2), "liveAudio": live}
+    out = min(duration, round(start + length, 2))
+    in_val = max(0.0, round(start, 2))
+    return {"in": in_val, "out": out, "liveAudio": live}
 
 
 def _rms(path) -> np.ndarray:
