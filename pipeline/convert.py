@@ -1,4 +1,5 @@
 import json
+import os
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -71,27 +72,43 @@ def _display_size(stream: dict) -> tuple[int, int]:
 
 
 def _convert_image(src: Path, dst: Path) -> tuple[datetime | None, dict]:
-    with Image.open(src) as img:
-        taken = _image_taken_at(img)
-        out = ImageOps.exif_transpose(img).convert("RGB")
-    out.thumbnail((MAX_PHOTO_SIDE, MAX_PHOTO_SIDE))
-    out.save(dst, "JPEG", quality=90)
+    tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
+    try:
+        with Image.open(src) as img:
+            taken = _image_taken_at(img)
+            icc_profile = img.info.get("icc_profile")
+            out = ImageOps.exif_transpose(img).convert("RGB")
+        out.thumbnail((MAX_PHOTO_SIDE, MAX_PHOTO_SIDE))
+        save_kwargs = {"quality": 90}
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        out.save(tmp, "JPEG", **save_kwargs)
+        os.replace(tmp, dst)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
     return taken, {"width": out.width, "height": out.height}
 
 
 def _convert_video(src: Path, dst: Path) -> tuple[datetime | None, dict]:
-    info = ff.probe(src)
-    v = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
-    if v is None:
-        raise RuntimeError("영상 스트림이 없습니다")
-    w, h = _display_size(v)
-    scale = min(1.0, MAX_VIDEO_SIDE / max(w, h))
-    tw, th = round(w * scale / 2) * 2, round(h * scale / 2) * 2
-    ff.run("-i", str(src), "-map", "0:v:0", "-map", "0:a:0?",
-           "-vf", f"fps={FPS},scale={tw}:{th}",
-           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst))
-    out = ff.probe(dst)
+    tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
+    try:
+        info = ff.probe(src)
+        v = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
+        if v is None:
+            raise RuntimeError("영상 스트림이 없습니다")
+        w, h = _display_size(v)
+        scale = min(1.0, MAX_VIDEO_SIDE / max(w, h))
+        tw, th = round(w * scale / 2) * 2, round(h * scale / 2) * 2
+        ff.run("-i", str(src), "-map", "0:v:0", "-map", "0:a:0?",
+               "-vf", f"fps={FPS},scale={tw}:{th}",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(tmp))
+        out = ff.probe(tmp)
+        os.replace(tmp, dst)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
     return _video_taken_at(info), {
         "width": tw, "height": th,
         "duration": round(float(out["format"]["duration"]), 3),
