@@ -56,9 +56,19 @@ def fit(items: list, beats: list[float], start: float, end: float, beats_per_pho
         keep = subsample(items, len(keep) - left)
 
 
+def selected_formats(selection: dict) -> list[str]:
+    formats = selection.get("formats") or list(FORMATS)
+    if not (isinstance(formats, list) and all(isinstance(f, str) for f in formats)):
+        raise ValueError(f'selection.json의 formats는 문자열 목록이어야 합니다 (예: ["reels", "youtube"]): {formats!r}')
+    return formats
+
+
 def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> list[dict]:
+    raw = selection.get("items", [])
+    if not (isinstance(raw, list) and all(isinstance(s, dict) for s in raw)):
+        raise ValueError('selection.json의 items는 객체 목록이어야 합니다 (예: [{"id": 0}, {"id": 3}])')
     items = []
-    for k, sel in enumerate(selection.get("items", [])):
+    for k, sel in enumerate(raw):
         cid = sel.get("id")
         if not (isinstance(cid, int) and 0 <= cid < len(candidates)):
             raise ValueError(f"items[{k}]: 후보 번호 {cid!r}가 없습니다 (0~{len(candidates) - 1})")
@@ -101,7 +111,7 @@ def build_format(fmt: str, items: list[dict], music: dict, cards: dict) -> dict:
 
 def build_storyboard(selection: dict, candidates: list[dict], highlights: dict, music: dict,
                      music_src: str, cards: dict) -> dict:
-    formats = selection.get("formats") or list(FORMATS)
+    formats = selected_formats(selection)
     unknown = [f for f in formats if f not in FORMATS]
     if unknown:
         raise ValueError(f"알 수 없는 형식: {unknown} (가능: {list(FORMATS)})")

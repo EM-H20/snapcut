@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from pipeline.music import analyze, best_window, pick_downbeats
 
@@ -32,3 +33,12 @@ def test_analyze_click_track(sample_project):
     assert m["chorus"][0] == 0.0  # 30초 곡 < 45초 → 통째
     assert m["chorus"] == [0.0, m["duration"]]
     assert len(m["downbeats"]) >= 10
+
+
+def test_long_song_chorus_starts_on_downbeat(tmp_path):
+    from tests.conftest import make_click_track
+    make_click_track(tmp_path / "long.wav", seconds=90.0)
+    m = analyze(tmp_path / "long.wav")
+    start, end = m["chorus"]
+    assert min(abs(start - d) for d in m["downbeats"]) <= 0.05
+    assert end == pytest.approx(min(m["duration"], start + 45.0), abs=1e-3)

@@ -133,3 +133,15 @@ def test_sub_beat_video_is_dropped_and_counted():
     plan = build_format("youtube", items, MUSIC, CARDS)
     assert not [s for s in plan["shots"] if s["type"] == "video"]
     assert plan["dropped"] == 1
+
+
+@pytest.mark.parametrize("sel", [{"items": 3}, {"items": [1, 2]}, {"items": "x"}])
+def test_resolve_items_rejects_malformed_items(sel):
+    with pytest.raises(ValueError, match="items"):
+        resolve_items(sel, CANDS, HL)
+
+
+@pytest.mark.parametrize("formats", ["reels", [1], [["reels"]], {"reels": 1}])
+def test_build_storyboard_rejects_malformed_formats(formats):
+    with pytest.raises(ValueError, match="formats"):
+        build_storyboard({"formats": formats, "items": [{"id": 0}]}, CANDS, HL, MUSIC, "music/s.mp3", {})

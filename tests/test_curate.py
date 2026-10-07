@@ -23,3 +23,25 @@ def test_curate_drops_blur_and_burst_duplicate(sample_project):
     times = [c["taken_at"] for c in r["candidates"]]
     assert times == sorted(times)
     assert (proj.cache / "candidates.json").exists()
+
+
+def test_curate_rejects_live_photo_mov(tmp_path):
+    import json
+    from PIL import Image
+    proj = Project(tmp_path)
+    (proj.cache / "media").mkdir(parents=True)
+    Image.new("RGB", (64, 64), (9, 9, 9)).save(proj.cache / "media" / "p.jpg")
+
+    def item(src, typ, **kw):
+        return {"src": src, "file": f"media/{src.replace('/', '__')}", "type": typ,
+                "taken_at": "2026-09-12T10:00:00", **kw}
+    items = [item("day1/IMG_1.HEIC", "photo", file="media/p.jpg"),
+             item("day1/img_1.MOV", "video", duration=2.0),     # 라이브 포토
+             item("day1/IMG_2.MOV", "video", duration=2.0),     # 짝 없음
+             item("day2/IMG_1.MOV", "video", duration=2.0),     # 다른 폴더
+             item("day1/IMG_1.mp4", "video", duration=9.0)]     # 길다
+    (proj.cache / "manifest.json").write_text(json.dumps({"items": items}))
+    r = curate(proj)
+    assert [x for x in r["rejected"] if x["reason"] == "라이브 포토"] == [
+        {"file": "media/day1__img_1.MOV", "reason": "라이브 포토"}]
+    assert len(r["candidates"]) == 4

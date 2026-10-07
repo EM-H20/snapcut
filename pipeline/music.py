@@ -39,10 +39,17 @@ def analyze(path) -> dict:
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.times_like(rms, sr=SR)
     duration = round(len(y) / SR, 3)
+    downbeats = pick_downbeats(beats, onset[idx])
+    chorus = [0.0, duration]
+    if duration > REELS_SECONDS:
+        start = best_window(rms, times, REELS_SECONDS)[0]
+        if downbeats:  # 릴스는 마디 첫 박에서 시작
+            start = min(downbeats, key=lambda d: abs(d - start))
+        chorus = [start, round(min(duration, start + REELS_SECONDS), 3)]
     return {
         "duration": duration,
         "bpm": round(float(np.atleast_1d(tempo)[0]), 1),
         "beats": [round(float(b), 3) for b in beats],
-        "downbeats": pick_downbeats(beats, onset[idx]),
-        "chorus": [0.0, duration] if duration <= REELS_SECONDS else list(best_window(rms, times, REELS_SECONDS)),
+        "downbeats": downbeats,
+        "chorus": chorus,
     }

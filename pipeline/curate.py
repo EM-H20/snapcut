@@ -1,5 +1,6 @@
 import json
 import statistics
+from pathlib import PurePosixPath
 
 import cv2
 import imagehash
@@ -9,6 +10,7 @@ from .paths import Project
 
 BLUR_RATIO = 0.10   # 세트 중앙값 대비 이 비율 미만 = 흔들림 (낮은 디테일 풍경 오탐 방지; Task 12에서 실데이터로 조정)
 DUP_DISTANCE = 6    # phash 해밍 거리 이하 = 같은 장면 연사
+LIVE_PHOTO_SECONDS = 3.5  # 같은 이름의 사진이 있는 이 길이 이하 영상 = 라이브 포토의 MOV
 
 
 def sharpness(path) -> float:
@@ -37,6 +39,11 @@ def _phash(path) -> imagehash.ImageHash:
         return imagehash.phash(img)
 
 
+def _stem_key(item: dict) -> tuple:
+    src = PurePosixPath(item["src"])
+    return src.parent, src.stem.lower()
+
+
 def curate(proj: Project) -> dict:
     items = json.loads((proj.cache / "manifest.json").read_text())["items"]
     items = sorted(items, key=lambda i: i["taken_at"])
@@ -45,6 +52,11 @@ def curate(proj: Project) -> dict:
     median = statistics.median(scores.values()) if scores else 0.0
 
     rejected, sharp = [], []
+    photo_keys = {_stem_key(p) for p in photos}
+    live = {i["file"] for i in items
+            if i["type"] == "video" and i["duration"] <= LIVE_PHOTO_SECONDS and _stem_key(i) in photo_keys}
+    rejected += [{"file": f, "reason": "라이브 포토"} for f in sorted(live)]
+    items = [i for i in items if i["file"] not in live]
     for p in photos:
         if scores[p["file"]] < BLUR_RATIO * median:
             rejected.append({"file": p["file"], "reason": "흔들림"})

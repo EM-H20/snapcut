@@ -30,16 +30,27 @@ def cmd_convert(args) -> Project:
         print(f"주의: HDR 영상 {len(hdr)}개 — 색이 바래 보일 수 있습니다: {', '.join(hdr[:5])}")
     no_time = [i["src"] for i in m["items"] if i["time_source"] == "mtime"]
     if no_time:
-        print(f"참고: 촬영 시각 정보가 없어 파일 날짜로 정렬한 항목 {len(no_time)}개")
+        print(f"참고: 촬영 시각 정보가 없어 파일 날짜로 정렬한 항목 {len(no_time)}개: {', '.join(no_time[:5])}")
     return proj
+
+
+def _candidate_files(path: Path) -> list[str] | None:
+    try:
+        return [c["file"] for c in json.loads(path.read_text(encoding="utf-8"))["candidates"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def cmd_prepare(args) -> None:
     proj = cmd_convert(args)
+    cands_f = proj.cache / "candidates.json"
+    before = _candidate_files(cands_f)  # curate가 덮어쓰기 전에 읽는다
     c = curate.curate(proj)
+    if proj.selection.exists() and before is not None and before != [x["file"] for x in c["candidates"]]:
+        print("주의: 후보 번호가 바뀌었습니다 — selection.json의 items를 새 시트 기준으로 다시 고르세요.")
     highlights.analyze_clips(proj, c["candidates"])
     sheets = contact.make_sheets(proj, c["candidates"])
-    print(f"후보 {len(c['candidates'])}개 (제외 {len(c['rejected'])}개: 흔들림/중복)")
+    print(f"후보 {len(c['candidates'])}개 (제외 {len(c['rejected'])}개: 흔들림/중복/라이브 포토)")
     print("썸네일 시트:")
     for s in sheets:
         print(f"  {s}")
@@ -95,19 +106,22 @@ def cmd_plan(args) -> None:
     if not proj.selection.exists():
         raise SystemExit(f"selection.json이 없습니다: {proj.selection}")
     sel = json.loads(proj.selection.read_text(encoding="utf-8"))
+    if not isinstance(sel, dict):
+        raise ValueError("selection.json은 { ... } 형태의 객체여야 합니다")
+    formats = plan.selected_formats(sel)
     if not sel.get("music"):
         raise SystemExit("selection.json에 music이 없습니다. 공용 음악 파일명이나 경로를 넣어 주세요.")
     cands_f, hl_f = proj.cache / "candidates.json", proj.cache / "highlights.json"
     if not (cands_f.exists() and hl_f.exists()):
         raise SystemExit(f"먼저 prepare를 실행하세요: python -m pipeline prepare {args.project}")
+    cands = json.loads(cands_f.read_text(encoding="utf-8"))["candidates"]
+    hl = json.loads(hl_f.read_text(encoding="utf-8"))
+    plan.resolve_items(sel, cands, hl)  # 오래 걸리는 음악 분석·카드 렌더 전에 selection 오류부터 잡는다
     music_src, analysis = _music(proj, _resolve_music(sel["music"]))
     template = sel.get("intro") or "basic"
-    formats = sel.get("formats") or list(plan.FORMATS)
     cards = {f: {"intro": _card(proj, template, f, sel.get("title", ""), sel.get("subtitle", "")),
                  "outro": _card(proj, template, f, sel.get("ending", ""), "")}
              for f in formats if f in plan.FORMATS}
-    cands = json.loads(cands_f.read_text(encoding="utf-8"))["candidates"]
-    hl = json.loads(hl_f.read_text(encoding="utf-8"))
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"음악: {Path(music_src).name} ({analysis['bpm']} BPM)")
@@ -144,9 +158,6 @@ def cmd_music(args) -> None:
 
 
 def main(argv=None) -> None:
-    for tool, hint in (("ffmpeg", "brew install ffmpeg"), ("npx", "Node.js 설치")):
-        if not shutil.which(tool):
-            raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     p = argparse.ArgumentParser(prog="python -m pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("convert", "prepare", "plan", "studio"):
@@ -156,6 +167,11 @@ def main(argv=None) -> None:
     r.add_argument("--formats", default=None)
     sub.add_parser("music")
     args = p.parse_args(argv)
+    needs = ([] if args.cmd == "music" else [("ffmpeg", "brew install ffmpeg")]) + \
+        ([("npx", "Node.js 설치")] if args.cmd in ("plan", "studio", "render") else [])
+    for tool, hint in needs:
+        if not shutil.which(tool):
+            raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
                 "studio": cmd_studio, "render": cmd_render, "music": cmd_music}
     try:

@@ -1,3 +1,4 @@
+import json
 import os
 import unicodedata
 from datetime import datetime, timezone
@@ -130,3 +131,46 @@ def test_icc_profile_preserved(tmp_path):
     # Verify the profile is preserved
     with Image.open(dst) as result:
         assert result.info.get("icc_profile") is not None
+
+
+def _tiny_project(tmp_path, n=3) -> Project:
+    src = tmp_path / "영상소스"
+    src.mkdir()
+    for i in range(n):
+        Image.new("RGB", (64, 48), (i * 60, 10, 10)).save(src / f"a{i}.jpg")
+    return Project(tmp_path)
+
+
+def test_convert_resumes_from_partial_manifest(tmp_path):
+    proj = _tiny_project(tmp_path)
+    convert_project(proj)
+    manifest = proj.cache / "manifest.json"
+    data = json.loads(manifest.read_text())
+    mtimes = {i["src"]: (proj.cache / i["file"]).stat().st_mtime_ns for i in data["items"]}
+    data["items"] = data["items"][:1]  # 중단된 실행 흉내
+    manifest.write_text(json.dumps(data))
+    convert_project(proj)
+    for i, src in enumerate(sorted(mtimes)):
+        now = (proj.media / out_name(Path(src))).stat().st_mtime_ns
+        assert (now == mtimes[src]) == (i == 0)
+    assert len(json.loads(manifest.read_text())["items"]) == 3
+
+
+def test_convert_survives_corrupt_manifest(tmp_path):
+    proj = _tiny_project(tmp_path)
+    proj.cache.mkdir()
+    (proj.cache / "manifest.json").write_text("{not json")
+    assert len(convert_project(proj)["items"]) == 3
+
+
+def test_convert_reconverts_when_source_replaced_with_older_mtime(tmp_path):
+    proj = _tiny_project(tmp_path, 1)
+    convert_project(proj)
+    out = proj.cache / "media" / "a0_jpg.jpg"
+    first = out.read_bytes()
+    src = proj.sources / "a0.jpg"
+    old = src.stat().st_mtime_ns - 10**12
+    Image.new("RGB", (64, 48), (200, 200, 0)).save(src)
+    os.utime(src, ns=(old, old))
+    convert_project(proj)
+    assert out.read_bytes() != first

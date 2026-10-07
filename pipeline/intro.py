@@ -6,6 +6,7 @@ from pathlib import Path
 from .paths import SHARED
 
 HYPERFRAMES = "hyperframes@0.8.140"
+CARD_TIMEOUT = 600
 ORIENTATION = {"reels": "portrait", "youtube": "landscape"}
 
 
@@ -23,7 +24,9 @@ def render_card(template: str, fmt: str, text: str, sub: str, dst: Path) -> None
     try:
         r = subprocess.run(["npx", "-y", HYPERFRAMES, "render", str(comp.parent), "-c", comp.name, "-f", "30",
                             "-o", str(dst), "--variables-file", f.name, "--strict-variables", "--quiet"],
-                           capture_output=True, text=True)
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=CARD_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"HyperFrames 렌더가 {CARD_TIMEOUT}초 안에 끝나지 않았습니다. 네트워크(첫 실행 시 다운로드)를 확인하고 다시 실행하세요")
     finally:
         Path(f.name).unlink(missing_ok=True)
     if r.returncode:

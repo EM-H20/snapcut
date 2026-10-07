@@ -71,8 +71,25 @@ def _display_size(stream: dict) -> tuple[int, int]:
     return (h, w) if abs(rot) % 180 == 90 else (w, h)
 
 
+def _part_path(dst: Path) -> Path:
+    return dst.with_name(f"{dst.stem}.{os.getpid()}.part{dst.suffix}")
+
+
+def _write_manifest(path: Path, data: dict) -> None:
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    os.replace(tmp, path)
+
+
+def _load_old(path: Path) -> dict:
+    try:
+        return {i["src"]: i for i in json.loads(path.read_text())["items"]}
+    except (OSError, ValueError, KeyError, TypeError):  # 없거나 깨진 manifest = 빈 것으로 취급
+        return {}
+
+
 def _convert_image(src: Path, dst: Path) -> tuple[datetime | None, dict]:
-    tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
+    tmp = _part_path(dst)
     try:
         with Image.open(src) as img:
             taken = _image_taken_at(img)
@@ -91,7 +108,7 @@ def _convert_image(src: Path, dst: Path) -> tuple[datetime | None, dict]:
 
 
 def _convert_video(src: Path, dst: Path) -> tuple[datetime | None, dict]:
-    tmp = dst.with_name(dst.stem + ".part" + dst.suffix)
+    tmp = _part_path(dst)
     try:
         info = ff.probe(src)
         v = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
@@ -120,9 +137,8 @@ def _convert_video(src: Path, dst: Path) -> tuple[datetime | None, dict]:
 def convert_project(proj: Project) -> dict:
     proj.media.mkdir(parents=True, exist_ok=True)
     manifest_path = proj.cache / "manifest.json"
-    old = {}
-    if manifest_path.exists():
-        old = {i["src"]: i for i in json.loads(manifest_path.read_text())["items"]}
+    old = _load_old(manifest_path)
+    pending = dict(old)  # 중간 저장용: 아직 처리 못 한 옛 항목도 함께 남긴다
     items, skipped = [], []
     files = sorted(p for p in proj.sources.rglob("*") if p.is_file() and not p.name.startswith("."))
     for src in files:
@@ -135,9 +151,11 @@ def convert_project(proj: Project) -> dict:
             skipped.append({"src": rel, "reason": "지원하지 않는 형식"})
             continue
         dst = proj.media / out_name(rel_path)
+        st = src.stat()
         prev = old.get(rel)
-        if prev and dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+        if prev and dst.exists() and (prev.get("src_size"), prev.get("src_mtime")) == (st.st_size, st.st_mtime_ns):
             items.append(prev)
+            pending[rel] = prev
             continue
         try:
             taken, meta = (_convert_image if ext in IMAGE_EXT else _convert_video)(src, dst)
@@ -145,12 +163,16 @@ def convert_project(proj: Project) -> dict:
             skipped.append({"src": rel, "reason": str(e)[:200]})
             continue
         source = "mtime" if taken is None else ("exif" if ext in IMAGE_EXT else "metadata")
-        taken = taken or datetime.fromtimestamp(src.stat().st_mtime)
-        items.append({
+        taken = taken or datetime.fromtimestamp(st.st_mtime)
+        item = {
             "src": rel, "file": f"media/{dst.name}",
             "type": "photo" if ext in IMAGE_EXT else "video",
             "taken_at": taken.isoformat(timespec="seconds"), "time_source": source, **meta,
-        })
+            "src_size": st.st_size, "src_mtime": st.st_mtime_ns,
+        }
+        items.append(item)
+        pending[rel] = item
+        _write_manifest(manifest_path, {"items": list(pending.values()), "skipped": skipped})  # 중단돼도 진행분 보존
     result = {"items": items, "skipped": skipped}
-    manifest_path.write_text(json.dumps(result, ensure_ascii=False, indent=2))
+    _write_manifest(manifest_path, result)
     return result
