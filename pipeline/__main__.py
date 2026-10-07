@@ -1,9 +1,9 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
-import sys
 import unicodedata
 from pathlib import Path
 
@@ -60,14 +60,18 @@ def _resolve_music(name: str) -> Path:
 def _music(proj: Project, src: Path) -> tuple[str, dict]:
     dst = proj.cache / "music" / unicodedata.normalize("NFC", src.name)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if not dst.exists() or dst.stat().st_size != src.stat().st_size:
-        shutil.copy2(src, dst)
     cache = dst.with_name(dst.name + ".json")
-    if cache.exists() and cache.stat().st_mtime >= dst.stat().st_mtime:
+    s = src.stat()
+    if not dst.exists() or (dst.stat().st_size, dst.stat().st_mtime) != (s.st_size, s.st_mtime):
+        shutil.copy2(src, dst)  # copy2는 mtime을 보존하므로 (크기, mtime) 비교로 교체를 감지한다
+        cache.unlink(missing_ok=True)
+    if cache.exists():
         analysis = json.loads(cache.read_text(encoding="utf-8"))
     else:
         analysis = music.analyze(dst)
-        cache.write_text(json.dumps(analysis), encoding="utf-8")
+        tmp = cache.with_name(cache.name + ".part")
+        tmp.write_text(json.dumps(analysis), encoding="utf-8")
+        os.replace(tmp, cache)
     return f"music/{dst.name}", analysis
 
 
@@ -77,7 +81,12 @@ def _card(proj: Project, template: str, fmt: str, text: str, sub: str) -> str:
     dst = proj.cache / "cards" / f"{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
-        intro.render_card(template, fmt, text, sub, dst)
+        part = dst.with_name(f"{key}.part.mp4")
+        try:
+            intro.render_card(template, fmt, text, sub, part)
+            os.replace(part, dst)
+        finally:
+            part.unlink(missing_ok=True)
     return f"cards/{dst.name}"
 
 
@@ -86,14 +95,19 @@ def cmd_plan(args) -> None:
     if not proj.selection.exists():
         raise SystemExit(f"selection.json이 없습니다: {proj.selection}")
     sel = json.loads(proj.selection.read_text(encoding="utf-8"))
+    if not sel.get("music"):
+        raise SystemExit("selection.json에 music이 없습니다. 공용 음악 파일명이나 경로를 넣어 주세요.")
+    cands_f, hl_f = proj.cache / "candidates.json", proj.cache / "highlights.json"
+    if not (cands_f.exists() and hl_f.exists()):
+        raise SystemExit(f"먼저 prepare를 실행하세요: python -m pipeline prepare {args.project}")
     music_src, analysis = _music(proj, _resolve_music(sel["music"]))
     template = sel.get("intro") or "basic"
     formats = sel.get("formats") or list(plan.FORMATS)
     cards = {f: {"intro": _card(proj, template, f, sel.get("title", ""), sel.get("subtitle", "")),
                  "outro": _card(proj, template, f, sel.get("ending", ""), "")}
              for f in formats if f in plan.FORMATS}
-    cands = json.loads((proj.cache / "candidates.json").read_text(encoding="utf-8"))["candidates"]
-    hl = json.loads((proj.cache / "highlights.json").read_text(encoding="utf-8"))
+    cands = json.loads(cands_f.read_text(encoding="utf-8"))["candidates"]
+    hl = json.loads(hl_f.read_text(encoding="utf-8"))
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"음악: {Path(music_src).name} ({analysis['bpm']} BPM)")
@@ -109,6 +123,8 @@ def cmd_studio(args) -> None:
 
 def cmd_render(args) -> None:
     proj = project(args.project)
+    if not proj.storyboard.exists():
+        raise SystemExit(f"먼저 plan을 실행하세요: python -m pipeline plan {args.project}")
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))
     formats = args.formats.split(",") if args.formats else list(sb["formats"])
     proj.output.mkdir(exist_ok=True)

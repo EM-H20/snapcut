@@ -31,5 +31,9 @@ def test_prepare_plan_render(sample_project):
     info = ff.probe(video)
     v = next(s for s in info["streams"] if s["codec_type"] == "video")
     assert (v["width"], v["height"]) == (1080, 1920)
+    assert any(s["codec_type"] == "audio" for s in info["streams"])
+    cards = list((sample_project / ".cache" / "cards").glob("*.mp4"))
+    assert cards and all(not c.name.endswith(".part.mp4") for c in cards)
+    assert abs(float(ff.probe(cards[0])["format"]["duration"]) - 3.0) < 0.1
     plan = sb["formats"]["reels"]
     assert abs(float(info["format"]["duration"]) - (plan["musicEnd"] - plan["musicStart"])) < 0.2
