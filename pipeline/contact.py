@@ -13,8 +13,13 @@ def _thumb(proj: Project, c: dict) -> Image.Image:
     if c["type"] == "video":
         thumb = proj.cache / "thumbs" / (Path(c["file"]).stem + ".jpg")
         thumb.parent.mkdir(exist_ok=True)
-        if not thumb.exists():
-            ff.run("-ss", f"{c['duration'] / 2:.2f}", "-i", str(path), "-frames:v", "1", str(thumb))
+        # Regenerate if missing or stale (thumbnail older than video)
+        if not thumb.exists() or thumb.stat().st_mtime < path.stat().st_mtime:
+            try:
+                ff.run("-ss", f"{c['duration'] / 2:.2f}", "-i", str(path), "-frames:v", "1", str(thumb))
+            except RuntimeError:
+                # Fallback to first frame if midpoint seek fails (e.g., stream shorter than duration)
+                ff.run("-ss", "0", "-i", str(path), "-frames:v", "1", str(thumb))
         path = thumb
     with Image.open(path) as img:
         return ImageOps.pad(img.convert("RGB"), (CELL, CELL), color="black")
