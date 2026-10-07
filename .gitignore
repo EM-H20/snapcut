@@ -13,5 +13,10 @@ out/
 
 .DS_Store
 
+# Playwright
+.playwright-mcp/
+playwright-report/
+test-results/
+
 # superpowers 작업 문서 (로컬 전용)
 docs/superpowers/
