@@ -30,4 +30,5 @@ def test_analyze_click_track(sample_project):
     assert abs(float(np.median(gaps)) - 0.5) < 0.03
     assert abs(m["duration"] - 30.0) < 0.1
     assert m["chorus"][0] == 0.0  # 30초 곡 < 45초 → 통째
+    assert m["chorus"] == [0.0, m["duration"]]
     assert len(m["downbeats"]) >= 10

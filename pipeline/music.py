@@ -38,10 +38,11 @@ def analyze(path) -> dict:
     idx = np.clip(librosa.time_to_frames(beats, sr=SR), 0, len(onset) - 1)
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.times_like(rms, sr=SR)
+    duration = round(len(y) / SR, 3)
     return {
-        "duration": round(len(y) / SR, 3),
+        "duration": duration,
         "bpm": round(float(np.atleast_1d(tempo)[0]), 1),
         "beats": [round(float(b), 3) for b in beats],
         "downbeats": pick_downbeats(beats, onset[idx]),
-        "chorus": list(best_window(rms, times, REELS_SECONDS)),
+        "chorus": [0.0, duration] if duration <= REELS_SECONDS else list(best_window(rms, times, REELS_SECONDS)),
     }
