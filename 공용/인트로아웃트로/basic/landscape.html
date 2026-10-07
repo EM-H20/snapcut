@@ -1,0 +1,38 @@
+<!doctype html>
+<html data-composition-variables='[
+  {"id":"text","type":"string","label":"Text","default":"제주, 2026 가을"},
+  {"id":"sub","type":"string","label":"Sub","default":""}
+]'>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Apple SD Gothic Neo"; src: local("Apple SD Gothic Neo"); }
+  @font-face { font-family: "Noto Sans KR"; src: local("Noto Sans KR"); }
+  html, body { margin: 0; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           background: radial-gradient(circle at 50% 40%, #2a2238 0%, #0b0a10 70%);
+           font-family: "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; color: #fff; }
+  .bg { position: absolute; inset: 0; }
+  .text { position: absolute; left: 10%; right: 10%; top: 40%; text-align: center; font-size: 110px; font-weight: 700; letter-spacing: -2px; }
+  .sub { position: absolute; left: 10%; right: 10%; top: 58%; text-align: center; font-size: 48px; opacity: .75; }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="card" data-start="0" data-duration="3" data-width="1920" data-height="1080">
+  <div id="bg" class="clip bg" data-start="0" data-duration="3" data-track-index="0"></div>
+  <div id="text" class="clip text" data-start="0" data-duration="3" data-track-index="1"></div>
+  <div id="sub" class="clip sub" data-start="0" data-duration="3" data-track-index="2"></div>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script>
+    const { text, sub } = window.__hyperframes.getVariables();
+    document.getElementById("text").textContent = text;
+    document.getElementById("sub").textContent = sub;
+    const tl = gsap.timeline({ paused: true });
+    tl.from("#text", { opacity: 0, y: 40, duration: 0.8 }, 0.2)
+      .from("#sub", { opacity: 0, y: 20, duration: 0.6 }, 0.6);
+    window.__timelines = window.__timelines || {};
+    window.__timelines.card = tl;
+  </script>
+</div>
+</body>
+</html>
