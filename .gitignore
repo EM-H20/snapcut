@@ -9,6 +9,7 @@ __pycache__/
 out/
 *.mp4
 *.mov
+*.egg-info/
 
 .DS_Store
 
