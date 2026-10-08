@@ -7,7 +7,7 @@
 ```bash
 npx github:EM-H20/snapcut
 ```
-`~/snapcut`에 내려받고 설치까지 끝낸다. 다른 위치는 `npx github:EM-H20/snapcut ~/원하는/폴더`. 같은 명령을 다시 실행하면 최신 버전으로 업데이트된다.
+(`npx`가 없으면 먼저 `brew install node`.) `~/snapcut`에 내려받고 설치까지 끝낸다. 다른 위치는 `npx github:EM-H20/snapcut ~/원하는/폴더`. 같은 명령을 다시 실행하면 최신 버전으로 업데이트된다.
 
 이미 클론했다면 `./install.sh`. 설치 스크립트가 한 번에 처리한다(여러 번 실행해도 안전).
 - ffmpeg·Node 22+·Python 3.13+ 확인 — 없으면 Homebrew로 설치
