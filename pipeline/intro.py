@@ -18,21 +18,26 @@ def template_file(template: str, fmt: str) -> Path:
     return path
 
 
-def render_card(template: str, fmt: str, text: str, sub: str, dst: Path, bg: Path | None = None) -> None:
-    """bg가 있으면 템플릿을 임시 폴더에 복사하고 bg.mp4로 넣어 렌더한다 (템플릿이 쓰면 배경 영상이 된다)."""
+def render_card(template: str, fmt: str, text: str, sub: str, dst: Path, bg: Path | None = None,
+                layout: str = "wide") -> None:
+    """bg가 있으면 템플릿을 임시 폴더에 복사하고 bg.mp4로 넣어 렌더한다 (템플릿이 쓰면 배경 영상이 된다).
+    layout: "center"면 글씨를 가운데로 모은다 (사진 배경의 검은 띠를 피함) — layout 변수를 선언한 템플릿에만 넘긴다."""
     comp = template_file(template, fmt)
+    variables = {"text": text, "sub": sub}
+    if '"id":"layout"' in comp.read_text(encoding="utf-8").replace(" ", ""):
+        variables["layout"] = layout
     with tempfile.TemporaryDirectory() as tmp:
         if bg:
             work = Path(tmp) / "card"
             shutil.copytree(comp.parent, work)
             shutil.copyfile(bg, work / "bg.mp4")
             comp = work / comp.name
-        _render(comp, text, sub, dst)
+        _render(comp, variables, dst)
 
 
-def _render(comp: Path, text: str, sub: str, dst: Path) -> None:
+def _render(comp: Path, variables: dict, dst: Path) -> None:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
-        json.dump({"text": text, "sub": sub}, f, ensure_ascii=False)
+        json.dump(variables, f, ensure_ascii=False)
     try:
         r = subprocess.run(["npx", "-y", HYPERFRAMES, "render", str(comp.parent), "-c", comp.name, "-f", "30",
                             "-o", str(dst), "--variables-file", f.name, "--strict-variables", "--quiet"],

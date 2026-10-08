@@ -12,6 +12,7 @@ from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
 MUSIC_DIR = SHARED / "음악"
+CREDITS_FONT = SHARED / "인트로아웃트로" / "handwritten" / "NanumPenScript-Regular.ttf"  # 크레딧 손글씨
 AUDIO_EXT = {".mp3", ".m4a", ".wav", ".aac", ".flac"}
 
 
@@ -94,11 +95,18 @@ def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         part = dst.with_name(f"bg_{key}.part.mp4")
-        src = ["-ss", str(video[1]), "-i", str(proj.cache / video[0])] if video else \
-            ["-f", "lavfi", "-i", f"color=c=black:s={w}x{h}"]
+        photo = bool(video) and Path(video[0]).suffix.lower() == ".jpg"
+        if photo:  # 사진 배경: 본편 사진 장면과 같은 배치(전체가 보이게 + 검은 띠)라 사진 → 카드가 이음매 없이 이어진다
+            src, fit = ["-loop", "1", "-i", str(proj.cache / video[0])], \
+                f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black"
+        elif video:
+            src, fit = ["-ss", str(video[1]), "-i", str(proj.cache / video[0])], \
+                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+        else:
+            src, fit = ["-f", "lavfi", "-i", f"color=c=black:s={w}x{h}"], f"scale={w}:{h}"
         try:
             ff.run(*src, "-t", str(plan.CARD_SECONDS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                   "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={plan.FPS}", str(part))
+                   "-vf", f"{fit},setsar=1,fps={plan.FPS}", str(part))
             os.replace(part, dst)
         finally:
             part.unlink(missing_ok=True)
@@ -107,13 +115,14 @@ def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
 
 def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tuple[str, float] | None = None) -> str:
     mtime = intro.template_file(template, fmt).stat().st_mtime
-    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video], ensure_ascii=False).encode()).hexdigest()[:10]
+    layout = "center" if video and Path(video[0]).suffix.lower() == ".jpg" else "wide"  # 사진 배경이면 글씨를 사진 안쪽으로
+    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video, layout], ensure_ascii=False).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         part = dst.with_name(f"{key}.part.mp4")
         try:
-            intro.render_card(template, fmt, text, sub, part, _card_bg(proj, fmt, video))
+            intro.render_card(template, fmt, text, sub, part, _card_bg(proj, fmt, video), layout)
             os.replace(part, dst)
         finally:
             part.unlink(missing_ok=True)
@@ -143,6 +152,10 @@ def cmd_plan(args) -> None:
                  "outro": _card(proj, template, f, sel.get("ending", ""), "", outro_video)}
              for f in formats if f in plan.FORMATS}
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
+    if sel.get("credits") and CREDITS_FONT.exists():
+        (proj.cache / "fonts").mkdir(exist_ok=True)
+        shutil.copyfile(CREDITS_FONT, proj.cache / "fonts" / CREDITS_FONT.name)
+        sb["font"] = f"fonts/{CREDITS_FONT.name}"
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"음악: {Path(music_src).name} ({analysis['bpm']} BPM)")
     for f, p in sb["formats"].items():

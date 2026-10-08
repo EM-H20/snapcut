@@ -11,5 +11,7 @@ export function kenBurns(kind: KenBurns, p: number): {scale: number; x: number} 
       return {scale: 1.08, x: 2 - 4 * t};
     case 'pan-right':
       return {scale: 1.08, x: -2 + 4 * t};
+    case 'still':
+      return {scale: 1, x: 0};
   }
 }

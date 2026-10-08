@@ -17,3 +17,8 @@ test('끝에서 페이드아웃', () => {
   assert.equal(musicVolume(20, [], 20), 0);
   assert.ok(musicVolume(19, [], 20) < 1);
 });
+test('duck: false면 현장 소리와 음악을 둘 다 그대로', () => assert.equal(musicVolume(6.5, [{...live, duck: false}], 20), 1));
+test('페이드 끝 시각 뒤(크레딧)에는 음악 0', () => {
+  assert.equal(musicVolume(25, [], 20), 0);
+  assert.ok(musicVolume(19, [], 20) > 0);
+});

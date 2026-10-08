@@ -18,6 +18,9 @@ IGNORED_EXT = {".aae"}  # 아이폰 편집 정보 사이드카
 MAX_PHOTO_SIDE = 2560
 MAX_VIDEO_SIDE = 1920
 FPS = 30
+# 영상 인코딩 버전. 바꾸면 다음 convert에서 영상만 다시 변환한다 (사진은 그대로).
+# gop1s: 1초마다 키프레임 — 장면 시작점(구간 중간)으로의 탐색이 빨라 미리보기 전환이 멈칫하지 않는다
+VIDEO_ENCODE = "gop1s"
 HDR_TRANSFERS = {"arib-std-b67", "smpte2084"}
 
 
@@ -119,7 +122,7 @@ def _convert_video(src: Path, dst: Path) -> tuple[datetime | None, dict]:
         tw, th = round(w * scale / 2) * 2, round(h * scale / 2) * 2
         ff.run("-i", str(src), "-map", "0:v:0", "-map", "0:a:0?",
                "-vf", f"fps={FPS},scale={tw}:{th}",
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", str(FPS),
                "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(tmp))
         out = ff.probe(tmp)
         os.replace(tmp, dst)
@@ -131,6 +134,7 @@ def _convert_video(src: Path, dst: Path) -> tuple[datetime | None, dict]:
         "duration": round(float(out["format"]["duration"]), 3),
         "has_audio": any(s["codec_type"] == "audio" for s in out["streams"]),
         "hdr": is_hdr(v),
+        "encode": VIDEO_ENCODE,
     }
 
 
@@ -153,7 +157,8 @@ def convert_project(proj: Project) -> dict:
         dst = proj.media / out_name(rel_path)
         st = src.stat()
         prev = old.get(rel)
-        if prev and dst.exists() and (prev.get("src_size"), prev.get("src_mtime")) == (st.st_size, st.st_mtime_ns):
+        if prev and dst.exists() and (prev.get("src_size"), prev.get("src_mtime")) == (st.st_size, st.st_mtime_ns) \
+                and (ext in IMAGE_EXT or prev.get("encode") == VIDEO_ENCODE):
             items.append(prev)
             pending[rel] = prev
             continue

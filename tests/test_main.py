@@ -78,3 +78,24 @@ def test_card_render_timeout_is_korean_runtime_error(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="HyperFrames"):
         intro.render_card("basic", "reels", "t", "", tmp_path / "c.mp4")
     assert seen["stdin"] == subprocess.DEVNULL and seen["timeout"] == 600
+
+
+def _captured_variables(monkeypatch, template, layout):
+    import json as _json
+    from pipeline import intro
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(_json.loads(open(cmd[cmd.index("--variables-file") + 1], encoding="utf-8").read()))
+        class R: returncode = 0; stdout = ""; stderr = ""
+        return R()
+    monkeypatch.setattr(intro.subprocess, "run", fake_run)
+    from pathlib import Path as _P
+    intro.render_card(template, "youtube", "다음 행선지는 어디?", "", _P("x.mp4"), layout=layout)
+    return seen
+
+
+def test_card_layout_passed_only_to_templates_that_declare_it(monkeypatch):
+    # 사진 배경(양옆 검은 띠) 카드는 글씨를 사진 안쪽 가운데로 모은다 — layout 변수를 아는 템플릿에만 넘긴다
+    assert _captured_variables(monkeypatch, "handwritten", "center")["layout"] == "center"
+    assert "layout" not in _captured_variables(monkeypatch, "basic", "center")

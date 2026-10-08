@@ -180,8 +180,9 @@ def test_build_storyboard_rejects_malformed_formats(formats):
 def test_card_video_optional_and_validated():
     assert card_video({}, "introVideo", CANDS) is None
     assert card_video({"introVideo": {"id": 1, "in": 2.0}}, "introVideo", CANDS) == ("media/v.mp4", 2.0)
+    assert card_video({"outroVideo": {"id": 0}}, "outroVideo", CANDS) == ("media/a.jpg", 0.0)  # 사진 배경도 가능
     with pytest.raises(ValueError, match="introVideo"):
-        card_video({"introVideo": {"id": 0}}, "introVideo", CANDS)  # 사진
+        card_video({"introVideo": {"id": 99}}, "introVideo", CANDS)  # 없는 번호
     with pytest.raises(ValueError, match="outroVideo"):
         card_video({"outroVideo": {"id": 1, "in": 8.0}}, "outroVideo", CANDS)  # 3초가 영상 밖
 
@@ -251,3 +252,132 @@ def test_resolve_items_marks_and_solo():
     assert items == [{"type": "mark", "at": 12.5}, {"type": "photo", "src": "media/a.jpg", "solo": True}]
     with pytest.raises(ValueError, match="at"):
         resolve_items({"items": [{"at": "x"}]}, CANDS, HL)
+
+
+def test_rotate_passes_through_to_video_shot_and_is_validated():
+    items = resolve_items({"items": [{"id": 1, "rotate": -90}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert shots[0]["rotate"] == -90
+    assert "rotate" not in place(resolve_items({"items": [{"id": 1}]}, CANDS, HL), BEATS, 3.0, 20.0, 2)[0][0]
+    with pytest.raises(ValueError, match="rotate"):
+        resolve_items({"items": [{"id": 1, "rotate": 45}]}, CANDS, HL)
+
+
+
+def test_photo_ken_burns_override_for_match_cut_into_video():
+    # 사진 → 같은 장면 영상으로 이어 붙일 때: zoom-out은 원래 크기(1.0)로 끝나 영상 첫 프레임과 구도가 같다
+    items = resolve_items({"items": [{"id": 0, "kenBurns": "zoom-out"}, {"id": 0}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert shots[0]["kenBurns"] == "zoom-out"
+    assert shots[1]["kenBurns"] == "pan-left"  # 지정 안 한 사진은 순서대로 돌아간다
+    with pytest.raises(ValueError, match="kenBurns"):
+        resolve_items({"items": [{"id": 0, "kenBurns": "spin"}]}, CANDS, HL)
+
+
+def test_dissolve_passes_through_and_is_validated():
+    items = resolve_items({"items": [{"id": 0}, {"id": 1, "dissolve": 0.4}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert "dissolve" not in shots[0] and shots[1]["dissolve"] == 0.4
+    for bad in (0, -1, 1.5, "x"):
+        with pytest.raises(ValueError, match="dissolve"):
+            resolve_items({"items": [{"id": 1, "dissolve": bad}]}, CANDS, HL)
+
+
+def test_duck_false_passes_through_and_is_validated():
+    items = resolve_items({"items": [{"id": 1, "liveAudio": True, "duck": False}, {"id": 1}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert shots[0]["duck"] is False and "duck" not in shots[1]
+    with pytest.raises(ValueError, match="duck"):
+        resolve_items({"items": [{"id": 1, "duck": "no"}]}, CANDS, HL)
+
+
+def test_selection_level_duck_false_applies_to_every_video():
+    items = resolve_items({"duck": False, "items": [{"id": 1, "liveAudio": True}, {"id": 1, "duck": True}]}, CANDS, HL)
+    assert items[0]["duck"] is False and "duck" not in items[1]  # 항목별 지정이 우선
+
+
+def test_video_squeezed_to_under_half_at_segment_end_counts_as_not_fitting():
+    # 구간 끝에서 영상이 원래 길이의 절반도 안 남으면 잘라 넣지 않고 '자리 없음'으로 알린다 (0.3초 번쩍 방지)
+    items = [photo(0), photo(1), video(dur=10.0, vin=0.0, vout=2.5)]   # 사진 2비트씩 = 2초, 영상 5비트
+    shots, left = place(items, BEATS, 3.0, 5.5, 2)                       # 2.5초 창: 영상엔 1비트만 남음
+    assert left == 1 and [s["type"] for s in shots] == ["photo", "photo"]
+    shots, left = place(items, BEATS, 3.0, 6.5, 2)                       # 3비트 남음(절반 이상) → 넣는다
+    assert left == 0 and shots[-1]["type"] == "video"
+
+
+def test_still_photo_has_no_ken_burns_motion():
+    items = resolve_items({"items": [{"id": 0, "kenBurns": "still"}, {"id": 0}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert shots[0]["kenBurns"] == "still" and shots[1]["kenBurns"] in ("zoom-in", "pan-left", "zoom-out", "pan-right")
+
+
+def test_mark_photo_seconds_sets_pace_for_its_segment_only():
+    # 피날레처럼 한 구간만 사진을 빠르게: {"at": t, "photoSeconds": s}
+    items = [photo(0), photo(1), {"type": "mark", "at": 30.0, "photoSeconds": 1.0}] + [photo(i) for i in range(2, 8)]
+    shots = build_format("youtube", items, MUSIC, CARDS)["shots"][1:-1]
+    before, after = [s for s in shots if s["start"] < 30.0], [s for s in shots if s["start"] >= 30.0]
+    assert all(s["end"] - s["start"] == pytest.approx(1.0) for s in after)
+    assert before[0]["end"] - before[0]["start"] == pytest.approx(2.0)  # 앞 구간은 기본 2초
+
+
+def test_youtube_never_splits_the_screen():
+    plan = build_format("youtube", [photo(i) for i in range(400)], MUSIC, CARDS)
+    assert not [s for s in plan["shots"] if s["type"] == "collage"]
+
+
+CREDITS = {"lines": ["Special 땡스", "운전 OO"], "video": {"id": 1, "in": 1.0}, "seconds": 6}
+
+
+def test_credits_follow_the_outro_on_youtube_and_music_fades_before_them():
+    sel = {"formats": ["youtube", "reels"], "credits": CREDITS, "items": [{"id": 0}, {"id": 1}]}
+    sb = build_storyboard(sel, CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS, "reels": CARDS})
+    yt = sb["formats"]["youtube"]
+    outro, credits = yt["shots"][-2], yt["shots"][-1]
+    assert outro["type"] == "clip" and credits["type"] == "credits"
+    assert credits["start"] == outro["end"] and credits["end"] - credits["start"] == pytest.approx(6)
+    assert credits["lines"] == CREDITS["lines"] and credits["src"] == "media/v.mp4" and credits["in"] == 1.0
+    assert yt["musicFadeEnd"] == pytest.approx(credits["start"])          # 음악은 크레딧 전에 끝난다
+    assert yt["musicEnd"] - yt["musicStart"] == pytest.approx(credits["end"])
+    assert sb["formats"]["reels"]["shots"][-1]["type"] == "clip"           # 릴스엔 크레딧 없음
+
+
+@pytest.mark.parametrize("bad", [{"lines": [], "video": {"id": 1}}, {"lines": ["a"], "video": {"id": 0}},
+                                 {"lines": ["a"], "video": {"id": 1, "in": 9.0}, "seconds": 6}, "x"])
+def test_credits_are_validated(bad):
+    with pytest.raises(ValueError, match="credits"):
+        build_storyboard({"formats": ["youtube"], "credits": bad, "items": [{"id": 0}]}, CANDS, HL, MUSIC, "m", {"youtube": CARDS})
+
+
+
+def test_selection_level_live_audio_default():
+    hl_off = {"media/v.mp4": {"suggested": {"in": 4.0, "out": 8.0, "liveAudio": False}},
+              "media/mute.mp4": {"suggested": {"in": 0.0, "out": 4.0, "liveAudio": False}}}
+    assert resolve_items({"items": [{"id": 1}]}, CANDS, hl_off)[0]["liveAudio"] is False   # 기본은 제안값
+    items = resolve_items({"liveAudio": True, "items": [{"id": 2}, {"id": 1}, {"id": 1, "liveAudio": False}]}, CANDS, hl_off)
+    assert items[0]["liveAudio"] is False      # 소리 없는 영상은 여전히 불가
+    assert items[1]["liveAudio"] is True and items[2]["liveAudio"] is False   # 최상위 기본값, 항목별 지정이 우선
+
+
+
+def test_outro_card_fades_to_black_at_its_end():
+    shots = build_format("youtube", [photo(i) for i in range(5)], MUSIC, CARDS)["shots"]
+    assert shots[-1]["type"] == "clip" and shots[-1]["fadeOut"] == 1.0
+    assert "fadeOut" not in shots[0]   # 인트로는 페이드아웃 없음
+
+
+def test_beatless_song_tail_still_holds_shots():
+    # 곡 끝 페이드 구간엔 비트가 안 잡힌다 — 마지막 비트 간격으로 격자를 이어서 그 시간도 쓴다
+    tail = dict(MUSIC, beats=[b for b in BEATS if b <= 50.0], duration=60.0)
+    shots = build_format("youtube", [photo(i) for i in range(40)], tail, CARDS)["shots"]
+    content_end = shots[-1]["start"]          # 아웃트로 시작 = 본편 끝
+    assert content_end > 55.0                 # 50초에서 멈추지 않고 꼬리(…57초)까지 채움
+    assert content_end <= 60.0 - OUTRO_SECONDS + 1e-6
+
+
+def test_blur_transition_passes_through_and_is_validated():
+    items = resolve_items({"items": [{"id": 0, "blur": 0.6}, {"id": 1, "blur": 0.6}, {"id": 0}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert shots[0]["blur"] == 0.6 and shots[1]["blur"] == 0.6 and "blur" not in shots[2]
+    for bad in (0, -1, 2.0, "x"):
+        with pytest.raises(ValueError, match="blur"):
+            resolve_items({"items": [{"id": 1, "blur": bad}]}, CANDS, HL)

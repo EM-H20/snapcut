@@ -174,3 +174,42 @@ def test_convert_reconverts_when_source_replaced_with_older_mtime(tmp_path):
     os.utime(src, ns=(old, old))
     convert_project(proj)
     assert out.read_bytes() != first
+
+
+def _keyframes(path) -> list[float]:
+    import subprocess
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-skip_frame", "nokey",
+                        "-show_entries", "frame=pts_time", "-of", "csv=p=0", str(path)],
+                       capture_output=True, text=True, check=True)
+    return [float(x.strip(",")) for x in r.stdout.split()]
+
+
+def _tiny_video_project(tmp_path) -> Project:
+    from tests.conftest import _ffmpeg
+    src = tmp_path / "영상소스"
+    src.mkdir()
+    _ffmpeg("-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=4",
+            "-c:v", "libx264", "-g", "300", "-pix_fmt", "yuv420p", str(src / "v.mp4"))  # 원본은 키프레임 1개
+    return Project(tmp_path)
+
+
+def test_converted_video_has_a_keyframe_every_second(tmp_path):
+    # 키프레임이 드물면 장면 시작점(구간 중간)으로의 탐색이 느려 미리보기 전환마다 멈칫한다
+    proj = _tiny_video_project(tmp_path)
+    convert_project(proj)
+    keys = _keyframes(proj.media / "v_mp4.mp4")
+    assert keys[0] == 0.0 and max(b - a for a, b in zip(keys, keys[1:])) <= 1.0 + 1e-6
+
+
+def test_video_converted_with_old_encoding_is_redone(tmp_path):
+    proj = _tiny_video_project(tmp_path)
+    convert_project(proj)
+    manifest = proj.cache / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["items"][0].pop("encode", None)  # 예전 인코딩으로 만든 항목 흉내
+    manifest.write_text(json.dumps(data))
+    out = proj.media / "v_mp4.mp4"
+    before = out.stat().st_mtime_ns
+    convert_project(proj)
+    assert out.stat().st_mtime_ns != before
+    assert json.loads(manifest.read_text())["items"][0]["encode"]

@@ -11,3 +11,7 @@ test('pan은 반대 방향', () => {
   assert.equal(kenBurns('pan-right', 1).x, 2);
 });
 test('범위 밖 진행률은 잘라냄', () => assert.deepEqual(kenBurns('zoom-out', 5), kenBurns('zoom-out', 1)));
+test('still은 움직이지 않음', () => {
+  assert.deepEqual(kenBurns('still', 0), {scale: 1, x: 0});
+  assert.deepEqual(kenBurns('still', 1), {scale: 1, x: 0});
+});
