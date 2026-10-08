@@ -4,13 +4,18 @@
 
 ## 설치
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-cd render && npm install && cd ..
-.venv/bin/python tools/install_quick_action.py   # Finder 우클릭 변환 버튼
+git clone https://github.com/EM-H20/snapcut.git
+cd snapcut
+./install.sh
 ```
-필요: macOS, ffmpeg(`brew install ffmpeg`), Node 22+.
+`install.sh`가 한 번에 처리한다(여러 번 실행해도 안전).
+- ffmpeg·Node 22+·Python 3.13+ 확인 — 없으면 Homebrew로 설치
+- Python 가상환경(`.venv`)과 패키지, Remotion(`render/`), HyperFrames 내려받기
+- Finder 우클릭 변환 버튼 설치, `공용/음악/`·`projects/` 폴더 생성
 
-렌더링은 설치된 Google Chrome을 사용한다(render/remotion.config.ts) — 번들 브라우저가 이 Mac에서 실행되지 않음. 다른 Chrome 경로는 SNAPCUT_CHROME 환경변수로 지정.
+필요: macOS, [Homebrew](https://brew.sh)(도구가 없을 때만), [Google Chrome](https://www.google.com/chrome/) 권장, [Claude Code](https://claude.com/claude-code).
+
+렌더링은 설치된 Google Chrome을 사용한다(`render/remotion.config.ts`) — Remotion 번들 브라우저가 일부 Mac에서 실행되지 않기 때문. 다른 Chrome 경로는 `SNAPCUT_CHROME` 환경변수로 지정.
 
 ## 사용법
 
@@ -91,7 +96,14 @@ Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 ### 빠른 동작 수동 설치 (스크립트가 안 될 때)
 Automator → 새 문서 → 빠른 동작 → "작업 흐름이 받는 항목: 폴더 / Finder" → "셸 스크립트 실행"(입력 전달: 인수로) → `tools/install_quick_action.py`의 `SCRIPT` 내용을 붙여넣고 `{ROOT}`·`{LOG}`를 실제 경로로 → 저장 이름 "snapcut 영상소스 변환".
 
-## 라이선스 메모
-렌더링에 [Remotion](https://www.remotion.dev/license)을 사용한다 — 개인 무료, 일정 규모 이상 회사는 유료 라이선스. HyperFrames는 Apache 2.0.
+## 라이선스
+snapcut 코드는 [MIT](LICENSE).
+
+설치 시 내려받는 도구는 각자의 라이선스를 따른다(이 저장소에 포함되지 않음).
+- [Remotion](https://www.remotion.dev/license) — 개인·소규모 팀 무료, 일정 규모 이상 회사는 유료 라이선스 필요
+- [HyperFrames](https://github.com/heygen-com/hyperframes) — Apache 2.0
+- [GSAP](https://gsap.com/licensing/) — 인트로 카드 애니메이션, CDN에서 로드
+
+넣는 사진·영상·음악의 권리는 사용자에게 있다.
 
 선택: Remotion 공식 Claude 스킬 `npx skills add remotion-dev/skills`.
