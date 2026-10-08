@@ -7,7 +7,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, music, plan
+from . import contact, convert, curate, ff, highlights, intro, music, plan, template
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -77,9 +77,8 @@ def _music(proj: Project, src: Path) -> tuple[str, dict]:
     if not dst.exists() or (dst.stat().st_size, dst.stat().st_mtime) != (s.st_size, s.st_mtime):
         shutil.copy2(src, dst)  # copy2는 mtime을 보존하므로 (크기, mtime) 비교로 교체를 감지한다
         cache.unlink(missing_ok=True)
-    if cache.exists():
-        analysis = json.loads(cache.read_text(encoding="utf-8"))
-    else:
+    analysis = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else None
+    if not analysis or analysis.get("version") != music.VERSION:  # 예전 형식 캐시는 다시 분석 (sections 추가 등)
         analysis = music.analyze(dst)
         tmp = cache.with_name(cache.name + ".part")
         tmp.write_text(json.dumps(analysis), encoding="utf-8")
@@ -136,6 +135,8 @@ def cmd_plan(args) -> None:
     sel = json.loads(proj.selection.read_text(encoding="utf-8"))
     if not isinstance(sel, dict):
         raise ValueError("selection.json은 { ... } 형태의 객체여야 합니다")
+    if sel.get("template"):  # 공용/템플릿/<이름>의 기본값을 깔고 selection 값이 우선
+        sel = template.apply(sel, template.load(sel["template"]))
     formats = plan.selected_formats(sel)
     if not sel.get("music"):
         raise SystemExit("selection.json에 music이 없습니다. 공용 음악 파일명이나 경로를 넣어 주세요.")
@@ -147,9 +148,9 @@ def cmd_plan(args) -> None:
     plan.resolve_items(sel, cands, hl)  # 오래 걸리는 음악 분석·카드 렌더 전에 selection 오류부터 잡는다
     intro_video, outro_video = plan.card_video(sel, "introVideo", cands), plan.card_video(sel, "outroVideo", cands)
     music_src, analysis = _music(proj, _resolve_music(sel["music"]))
-    template = sel.get("intro") or "basic"
-    cards = {f: {"intro": _card(proj, template, f, sel.get("title", ""), sel.get("subtitle", ""), intro_video),
-                 "outro": _card(proj, template, f, sel.get("ending", ""), "", outro_video)}
+    card_tpl = sel.get("intro") or "basic"
+    cards = {f: {"intro": _card(proj, card_tpl, f, sel.get("title", ""), sel.get("subtitle", ""), intro_video),
+                 "outro": _card(proj, card_tpl, f, sel.get("ending", ""), "", outro_video)}
              for f in formats if f in plan.FORMATS}
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
     if sel.get("credits") and CREDITS_FONT.exists():
@@ -161,6 +162,21 @@ def cmd_plan(args) -> None:
     for f, p in sb["formats"].items():
         n = len(p["shots"]) - 2
         print(f"  {f}: {p['musicEnd'] - p['musicStart']:.1f}초, 장면 {n}개" + (f", 자리가 없어 뺀 항목 {p['dropped']}개" if p["dropped"] else ""))
+    print(section_report(sb["sections"]))
+    if sb["sections"]["ignored"]:
+        print(f"  놓을 수 없어 무시한 마커(곡 밖이거나 앞 마커보다 이름): {', '.join(sb['sections']['ignored'])}")
+    if sel.get("template") and "credits" not in sel:
+        print("  크레딧: credits.video(배경 영상)가 없어 생략했습니다")
+
+
+def section_report(sec: dict) -> str:
+    def fmt(name):
+        t = sec.get(name)
+        if t is None:
+            return f"{name} 없음"
+        m, s = divmod(t, 60)
+        return f"{name} {int(m)}:{s:04.1f}" + ("(추정)" if name in sec.get("estimated", []) else "")
+    return "구간: " + ", ".join(fmt(n) for n in plan.SECTION_NAMES)
 
 
 def cmd_studio(args) -> None:

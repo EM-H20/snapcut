@@ -99,3 +99,36 @@ def test_card_layout_passed_only_to_templates_that_declare_it(monkeypatch):
     # 사진 배경(양옆 검은 띠) 카드는 글씨를 사진 안쪽 가운데로 모은다 — layout 변수를 아는 템플릿에만 넘긴다
     assert _captured_variables(monkeypatch, "handwritten", "center")["layout"] == "center"
     assert "layout" not in _captured_variables(monkeypatch, "basic", "center")
+
+
+def test_old_music_cache_without_version_is_reanalyzed(tmp_path, monkeypatch):
+    import shutil
+    from pipeline import music
+    from tests.conftest import make_click_track
+    proj = _project(tmp_path, 0)
+    song = tmp_path / "s.wav"
+    make_click_track(song, seconds=8.0)
+    cache_dir = proj.cache / "music"
+    cache_dir.mkdir(parents=True)
+    shutil.copy2(song, cache_dir / "s.wav")
+    (cache_dir / "s.wav.json").write_text('{"bpm": 1, "beats": [], "downbeats": [], "duration": 8, "chorus": [0, 8]}')
+    calls = []
+    monkeypatch.setattr(music, "analyze", lambda p: calls.append(p) or {"version": music.VERSION, "sections": {}})
+    _, analysis = cli._music(proj, song)
+    assert calls and analysis["version"] == music.VERSION
+
+
+def test_plan_reports_unknown_template_in_korean(tmp_path):
+    proj = _project(tmp_path, 0)
+    proj.selection.write_text(json.dumps({"template": "없는템플릿", "place": "x", "music": "x", "items": []}))
+    proj.cache.mkdir()
+    (proj.cache / "candidates.json").write_text('{"candidates": []}')
+    (proj.cache / "highlights.json").write_text("{}")
+    with pytest.raises(SystemExit, match="템플릿"):
+        cli.main(["plan", str(proj.root)])
+
+
+def test_section_report_line():
+    line = cli.section_report({"브릿지": 126.76, "브레이크": 153.51, "마지막후렴": 163.79, "피날레": 174.78,
+                               "estimated": ["브릿지"], "ignored": []})
+    assert line == "구간: 브릿지 2:06.8(추정), 브레이크 2:33.5, 마지막후렴 2:43.8, 피날레 2:54.8"

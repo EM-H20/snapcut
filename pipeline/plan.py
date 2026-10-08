@@ -16,6 +16,8 @@ FORMATS = {
 }
 KEN_BURNS = ["zoom-in", "pan-left", "zoom-out", "pan-right"]
 KEN_BURNS_ANY = KEN_BURNS + ["still"]  # still: 움직임 없이 멈춘 사진 (사진 피날레)
+SECTION_NAMES = ("브릿지", "브레이크", "마지막후렴", "피날레")  # {"at": 이름} 마커로 쓰는 곡 구간
+FINALE_BARS = 8  # 피날레 = 마지막후렴 + 이 마디 수 (selection "finaleBars"로 덮어씀)
 
 
 def subsample(items: list, n: int) -> list:
@@ -118,7 +120,8 @@ def place_segments(items: list, beats: list[float], start: float, limit: float, 
         if it["type"] != "mark":
             segs[-1][1].append(it)
         elif segs[-1][0] < it["at"] < limit:  # 곡 구간 밖 마커(릴스 등)는 무시
-            bpp = max(1, round(it["photoSeconds"] / interval)) if "photoSeconds" in it else beats_per_photo
+            bpp = it["photoBeats"] if "photoBeats" in it else \
+                max(1, round(it["photoSeconds"] / interval)) if "photoSeconds" in it else beats_per_photo
             if segs[-1][1]:
                 segs.append([it["at"], [], bpp])
             elif len(segs) > 1:
@@ -164,12 +167,19 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
     items = []
     for k, sel in enumerate(raw):
         if "at" in sel:
-            if isinstance(sel["at"], bool) or not isinstance(sel["at"], (int, float)):
-                raise ValueError(f'items[{k}]: at은 곡 기준 초여야 합니다 (예: {{"at": 126.7}}): {sel["at"]!r}')
-            ps = sel.get("photoSeconds")
+            at = sel["at"]
+            if isinstance(at, str):
+                if at not in SECTION_NAMES:
+                    raise ValueError(f"items[{k}]: 알 수 없는 구간 이름 {at!r} (가능: {', '.join(SECTION_NAMES)})")
+            elif isinstance(at, bool) or not isinstance(at, (int, float)):
+                raise ValueError(f'items[{k}]: at은 곡 기준 초나 구간 이름이어야 합니다 (예: {{"at": 126.7}}, {{"at": "브릿지"}}): {at!r}')
+            ps, pb = sel.get("photoSeconds"), sel.get("photoBeats")
             if ps is not None and (isinstance(ps, bool) or not isinstance(ps, (int, float)) or ps <= 0):
                 raise ValueError(f"items[{k}]: photoSeconds는 양수 초여야 합니다: {ps!r}")
-            items.append({"type": "mark", "at": float(sel["at"]), **({"photoSeconds": float(ps)} if ps else {})})
+            if pb is not None and (isinstance(pb, bool) or not isinstance(pb, int) or pb <= 0):
+                raise ValueError(f"items[{k}]: photoBeats는 양의 정수여야 합니다: {pb!r}")
+            items.append({"type": "mark", "at": at if isinstance(at, str) else float(at),
+                          **({"photoSeconds": float(ps)} if ps else {}), **({"photoBeats": pb} if pb else {})})
             continue
         cid = sel.get("id")
         if not (isinstance(cid, int) and 0 <= cid < len(candidates)):
@@ -264,6 +274,37 @@ def resolve_credits(selection: dict, candidates: list[dict]) -> dict | None:
     return {"src": candidates[cid]["file"], "in": vin, "seconds": float(sec), "lines": lines}
 
 
+def resolve_sections(music: dict, finale_bars: int, override: dict | None = None) -> dict:
+    """분석 sections (+ selection "sections"로 직접 고친 값) + 피날레(마지막후렴 + N마디 첫 박) → 이름별 곡 시각."""
+    override = override or {}
+    sec = dict(music.get("sections") or {})
+    estimated = [n for n in sec.get("estimated", []) if n not in override]
+    sec.update({k: v for k, v in override.items() if k != "피날레"})
+    db = music.get("downbeats") or []
+    final = sec.get("마지막후렴")
+    finale = None
+    if "피날레" in override:
+        finale = override["피날레"]
+    elif final is not None and db:
+        k = min(range(len(db)), key=lambda i: abs(db[i] - final)) + finale_bars
+        finale = db[k] if k < len(db) else None
+        if "마지막후렴" in estimated:
+            estimated.append("피날레")  # 추정 후렴에서 나온 피날레도 추정
+    out = {name: sec.get(name) for name in SECTION_NAMES[:3]}
+    out["피날레"] = finale
+    out["estimated"] = estimated
+    return out
+
+
+def _section_override(selection: dict) -> dict:
+    ov = selection.get("sections") or {}
+    ex = '예: {"sections": {"마지막후렴": 160.2}}'
+    if not isinstance(ov, dict) or any(k not in SECTION_NAMES for k in ov) or \
+            any(isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 for v in ov.values()):
+        raise ValueError(f"selection.json의 sections는 구간 이름({', '.join(SECTION_NAMES)}) → 곡 기준 초여야 합니다 ({ex}): {ov!r}")
+    return {k: float(v) for k, v in ov.items()}
+
+
 def build_storyboard(selection: dict, candidates: list[dict], highlights: dict, music: dict,
                      music_src: str, cards: dict) -> dict:
     formats = selected_formats(selection)
@@ -271,11 +312,28 @@ def build_storyboard(selection: dict, candidates: list[dict], highlights: dict, 
     if unknown:
         raise ValueError(f"알 수 없는 형식: {unknown} (가능: {list(FORMATS)})")
     items = resolve_items(selection, candidates, highlights)
+    bars = selection.get("finaleBars", FINALE_BARS)
+    if isinstance(bars, bool) or not isinstance(bars, int) or bars < 0:
+        raise ValueError(f"selection.json의 finaleBars는 0 이상의 정수여야 합니다: {bars!r}")
+    sections = resolve_sections(music, bars, _section_override(selection))
+    # 이름 마커 → 초. 곡 밖이거나, 앞 마커보다 이르면(추정값끼리 순서가 뒤집힘 등) 놓을 수 없으니 빼고 보고한다
+    limit, prev, ignored, kept = music["duration"] - OUTRO_SECONDS, float("-inf"), [], []
+    for it in items:
+        if it["type"] == "mark":
+            name = it["at"] if isinstance(it["at"], str) else None
+            t = sections[name] if name else it["at"]
+            if name and (t is None or t >= limit or t <= prev):
+                ignored.append(name)
+                continue
+            prev = t
+            it = dict(it, at=t)
+        kept.append(it)
+    items, ignored = kept, sorted(set(ignored))
     credits = resolve_credits(selection, candidates)
     pace = selection.get("photoSeconds") or {}
     if not (isinstance(pace, dict) and all(isinstance(v, (int, float)) and v > 0 for v in pace.values())):
         raise ValueError(f'selection.json의 photoSeconds는 형식별 양수 초여야 합니다 (예: {{"youtube": 2.5}}): {pace!r}')
     return {"fps": FPS, "title": selection.get("title", ""), "ending": selection.get("ending", ""),
-            "music": music_src,
+            "music": music_src, "sections": dict(sections, ignored=ignored),
             "formats": {f: build_format(f, items, music, cards[f], pace.get(f), credits if f == "youtube" else None)
                         for f in formats}}

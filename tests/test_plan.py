@@ -251,7 +251,7 @@ def test_resolve_items_marks_and_solo():
     items = resolve_items({"items": [{"at": 12.5}, {"id": 0, "solo": True}]}, CANDS, HL)
     assert items == [{"type": "mark", "at": 12.5}, {"type": "photo", "src": "media/a.jpg", "solo": True}]
     with pytest.raises(ValueError, match="at"):
-        resolve_items({"items": [{"at": "x"}]}, CANDS, HL)
+        resolve_items({"items": [{"at": [1]}]}, CANDS, HL)   # 문자열은 이제 구간 이름 (test_unknown_section_name_is_an_error)
 
 
 def test_rotate_passes_through_to_video_shot_and_is_validated():
@@ -381,3 +381,66 @@ def test_blur_transition_passes_through_and_is_validated():
     for bad in (0, -1, 2.0, "x"):
         with pytest.raises(ValueError, match="blur"):
             resolve_items({"items": [{"id": 1, "blur": bad}]}, CANDS, HL)
+
+
+SECT = dict(MUSIC, downbeats=BEATS[::4],
+            sections={"브릿지": 40.0, "브레이크": 70.0, "마지막후렴": 80.0, "estimated": []})
+
+
+def test_named_marks_become_seconds_and_finale_is_bars_after_final_chorus():
+    sel = {"formats": ["youtube"], "items": [{"id": 0}, {"at": "브릿지"}, {"id": 0}, {"at": "피날레", "photoBeats": 3}, {"id": 0}, {"id": 0}]}
+    sb = build_storyboard(sel, CANDS, HL, SECT, "m", {"youtube": CARDS})
+    sh = sb["formats"]["youtube"]["shots"][1:-1]
+    assert sh[1]["start"] == 40.0
+    assert sh[2]["start"] == 96.0                       # 마지막후렴 80 + 8마디(2초) = 96
+    assert sh[2]["end"] - sh[2]["start"] == pytest.approx(1.5)   # 3비트 × 0.5초
+    assert sb["sections"]["피날레"] == 96.0 and sb["sections"]["ignored"] == []
+
+
+def test_unknown_section_name_is_an_error():
+    with pytest.raises(ValueError, match="구간"):
+        resolve_items({"items": [{"at": "간주"}]}, CANDS, HL)
+
+
+def test_finale_past_song_end_is_ignored_and_reported():
+    short = dict(SECT, sections={"브릿지": None, "브레이크": 100.0, "마지막후렴": 115.0, "estimated": []})
+    sel = {"formats": ["youtube"], "items": [{"id": 0}, {"at": "브릿지"}, {"id": 0}, {"at": "피날레"}, {"id": 0}]}
+    sb = build_storyboard(sel, CANDS, HL, short, "m", {"youtube": CARDS})
+    sh = sb["formats"]["youtube"]["shots"]
+    assert all(a["end"] == pytest.approx(b["start"]) for a, b in zip(sh, sh[1:]))   # 빈틈 없음
+    assert set(sb["sections"]["ignored"]) == {"브릿지", "피날레"}
+
+
+def test_named_marks_ignored_by_reels_window():
+    sel = {"formats": ["reels"], "items": [{"id": 0}, {"at": "브릿지"}, {"id": 0}]}
+    sb = build_storyboard(sel, CANDS, HL, SECT, "m", {"reels": CARDS})   # 릴스 구간 60~105초 밖의 40초
+    assert sb["formats"]["reels"]["shots"]
+
+
+def test_photo_beats_mark_sets_segment_pace():
+    items = [photo(0), {"type": "mark", "at": 30.0, "photoBeats": 3}] + [photo(i) for i in range(1, 5)]
+    shots = build_format("youtube", items, MUSIC, CARDS)["shots"][1:-1]
+    after = [s for s in shots if s["start"] >= 30.0]
+    assert after and all(s["end"] - s["start"] == pytest.approx(1.5) for s in after[:-1])  # 기본 2초와 구별되는 3비트
+
+
+def test_out_of_order_named_marks_are_reported_not_silently_dropped():
+    # 추정값끼리 순서가 뒤집히면(브릿지 120 > 브레이크 100) 뒤 마커는 놓을 수 없다 — 무시하되 보고한다
+    odd = dict(SECT, sections={"브릿지": 100.0, "브레이크": 90.0, "마지막후렴": 95.0, "estimated": ["브릿지"]})
+    sel = {"formats": ["youtube"], "items": [{"id": 0}, {"at": "브릿지"}, {"id": 0}, {"at": "브레이크"}, {"id": 0},
+                                           {"at": "마지막후렴"}, {"id": 0}]}
+    sb = build_storyboard(sel, CANDS, HL, odd, "m", {"youtube": CARDS})
+    assert set(sb["sections"]["ignored"]) == {"브레이크", "마지막후렴"}
+
+
+def test_selection_sections_override_estimates_and_moves_finale():
+    est = dict(SECT, sections={"브릿지": 40.0, "브레이크": 70.0, "마지막후렴": 80.0, "estimated": ["마지막후렴", "브레이크"]})
+    sel = {"formats": ["youtube"], "sections": {"마지막후렴": 60.0},
+           "items": [{"id": 0}, {"at": "마지막후렴"}, {"id": 0}, {"at": "피날레"}, {"id": 0}]}
+    sec = build_storyboard(sel, CANDS, HL, est, "m", {"youtube": CARDS})["sections"]
+    assert sec["마지막후렴"] == 60.0 and sec["피날레"] == 76.0          # 고친 후렴 + 8마디(2초)
+    assert "마지막후렴" not in sec["estimated"] and "피날레" not in sec["estimated"]
+    plain = build_storyboard(dict(sel, sections={}), CANDS, HL, est, "m", {"youtube": CARDS})["sections"]
+    assert "피날레" in plain["estimated"]                                   # 추정 후렴에서 나온 피날레도 추정
+    with pytest.raises(ValueError, match="sections"):
+        build_storyboard(dict(sel, sections={"간주": 10.0}), CANDS, HL, est, "m", {"youtube": CARDS})
