@@ -165,8 +165,6 @@ def cmd_plan(args) -> None:
     print(section_report(sb["sections"]))
     if sb["sections"]["ignored"]:
         print(f"  놓을 수 없어 무시한 마커(곡 밖이거나 앞 마커보다 이름): {', '.join(sb['sections']['ignored'])}")
-    if sel.get("template") and "credits" not in sel:
-        print("  크레딧: credits.video(배경 영상)가 없어 생략했습니다")
 
 
 def section_report(sec: dict) -> str:

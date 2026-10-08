@@ -1,4 +1,5 @@
-"""공용/템플릿/<이름>/template.json — 여행처럼 반복되는 영상의 기본값을 selection 아래에 깐다 (selection이 우선)."""
+"""공용/템플릿/<이름>/template.json — 편집 문법(카드·소리·속도·전환·피날레) 기본값을 selection 아래에 깐다 (selection이 우선).
+누구와 갔는지·문구는 템플릿이 아니라 여행마다 정한다 (친구 여행, 수련회, 가족 여행 모두 같은 템플릿)."""
 import copy
 import json
 from pathlib import Path
@@ -24,31 +25,23 @@ def apply(selection: dict, tpl: dict) -> dict:
         return _apply(selection, tpl)
     except (KeyError, AttributeError, TypeError, IndexError) as e:  # 손으로 고친 템플릿·selection의 형식 실수
         raise ValueError(f"템플릿 또는 selection 형식이 맞지 않습니다 ({type(e).__name__}: {e}) — "
-                         f"공용/템플릿-예시/의 template.json 형식을 참고하세요")
+                         f"공용/템플릿/여행/template.json 형식을 참고하세요")
 
 
 def _apply(selection: dict, tpl: dict) -> dict:
+    """템플릿은 편집 문법만 정한다. 타이틀·엔딩·크레딧 줄처럼 '누구와, 어떤 자리인지'는 여행마다 selection이 정한다."""
     sel = copy.deepcopy(selection)
-    if not sel.get("place") and "title" not in sel:
-        raise ValueError('템플릿 타이틀에 place가 필요합니다 (예: "place": "제주")')
-    team = tpl.get("team", {})
-    sel.setdefault("title", tpl.get("title", "{place}").format(team=team.get("name", ""), place=sel.get("place", "")))
-    sel.setdefault("ending", tpl.get("ending", ""))
     sel.setdefault("intro", tpl.get("card", "basic"))
     for key, val in (tpl.get("sound") or {}).items():
         sel.setdefault(key, val)
     if tpl.get("pace"):
         sel.setdefault("photoSeconds", dict(tpl["pace"]))
     fin = tpl.get("finale") or {}
-    sel.setdefault("finaleBars", fin.get("barsAfterFinalChorus", 8))
-    cred = tpl.get("credits") or {}
-    mine = sel.get("credits") or {}
-    if mine.get("video"):
-        lines = mine.get("lines") or [cred.get("header", "")] + [f"{m['role']} {m['name']}" for m in team.get("members", [])]
-        sel["credits"] = {"lines": [x for x in lines if x], "video": mine["video"],
-                          "seconds": mine.get("seconds", cred.get("seconds", 12))}
-    else:
-        sel.pop("credits", None)  # 배경 영상이 없으면 크레딧을 만들 수 없다 (plan 출력에서 안내)
+    if "barsAfterFinalChorus" in fin:  # 없으면 plan의 기본값(FINALE_BARS)
+        sel.setdefault("finaleBars", fin["barsAfterFinalChorus"])
+    if isinstance(sel.get("credits"), dict):  # 크레딧은 넣을 때만 — 길이만 템플릿 기본값
+        sel["credits"] = dict(sel["credits"])
+        sel["credits"].setdefault("seconds", (tpl.get("credits") or {}).get("seconds", 12))
     opening = tpl.get("opening") or {}
     items, in_finale, content_seen = [], False, 0
     for it in sel.get("items", []):

@@ -1,0 +1,22 @@
+{
+  "card": "handwritten",
+  "sound": {
+    "liveAudio": false,
+    "duck": false
+  },
+  "pace": {
+    "youtube": 2.0
+  },
+  "opening": {
+    "blur": 0.6,
+    "shots": 3
+  },
+  "finale": {
+    "barsAfterFinalChorus": 8,
+    "beatsPerPhoto": 3,
+    "kenBurns": "still"
+  },
+  "credits": {
+    "seconds": 12
+  }
+}
