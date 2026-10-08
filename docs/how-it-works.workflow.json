@@ -1,0 +1,275 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "snapcut 동작 원리",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "화면"
+        },
+        "backend": {
+          "label": "처리 단계"
+        },
+        "database": {
+          "label": "파일·데이터"
+        },
+        "cloud": {
+          "label": "렌더 엔진"
+        },
+        "external": {
+          "label": "입력"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "사용자"
+    },
+    {
+      "id": "claude",
+      "label": "Claude (/snapcut 스킬)"
+    },
+    {
+      "id": "pipeline",
+      "label": "Python pipeline"
+    },
+    {
+      "id": "render",
+      "label": "렌더 (HyperFrames · Remotion)"
+    }
+  ],
+  "phases": [
+    {
+      "id": "prepare",
+      "label": "prepare",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "choose",
+      "label": "고르기 · plan",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "output",
+      "label": "studio · render",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "sources",
+    "convert",
+    "curate",
+    "sheets",
+    "pick",
+    "selection",
+    "timeline",
+    "studio",
+    "review",
+    "render"
+  ],
+  "nodes": [
+    {
+      "id": "sources",
+      "lane": "user",
+      "col": 0,
+      "type": "external",
+      "label": "영상소스",
+      "sublabel": "사진·영상 + 공용/음악",
+      "width": 150
+    },
+    {
+      "id": "review",
+      "lane": "user",
+      "col": 4,
+      "type": "frontend",
+      "label": "보고 말로 수정",
+      "sublabel": "\"3번 빼줘\" · 렌더 요청",
+      "width": 150
+    },
+    {
+      "id": "pick",
+      "lane": "claude",
+      "col": 2,
+      "type": "backend",
+      "label": "베스트 컷 고르기",
+      "sublabel": "썸네일 시트를 보고",
+      "width": 150
+    },
+    {
+      "id": "selection",
+      "lane": "claude",
+      "col": 3,
+      "type": "database",
+      "label": "selection.json",
+      "sublabel": "컷 번호·곡·문구",
+      "width": 150
+    },
+    {
+      "id": "convert",
+      "lane": "pipeline",
+      "col": 0,
+      "type": "backend",
+      "label": "변환",
+      "sublabel": "jpg · H.264 30fps",
+      "width": 150
+    },
+    {
+      "id": "curate",
+      "lane": "pipeline",
+      "col": 1,
+      "type": "backend",
+      "label": "선별 · 하이라이트",
+      "sublabel": "흔들림·중복 제외",
+      "width": 150
+    },
+    {
+      "id": "sheets",
+      "lane": "pipeline",
+      "col": 2,
+      "type": "database",
+      "label": "썸네일 시트",
+      "sublabel": "#번호 = 후보 id",
+      "width": 150
+    },
+    {
+      "id": "timeline",
+      "lane": "pipeline",
+      "col": 3,
+      "type": "backend",
+      "label": "타임라인 계산",
+      "sublabel": "곡 비트에 컷 정렬",
+      "width": 150
+    },
+    {
+      "id": "cards",
+      "lane": "render",
+      "col": 3,
+      "type": "cloud",
+      "label": "인트로 · 아웃트로",
+      "sublabel": "HyperFrames 3초 카드",
+      "width": 150
+    },
+    {
+      "id": "studio",
+      "lane": "render",
+      "col": 4,
+      "type": "frontend",
+      "label": "Remotion Studio",
+      "sublabel": "storyboard.json 미리보기",
+      "width": 150
+    },
+    {
+      "id": "render",
+      "lane": "render",
+      "col": 5,
+      "type": "cloud",
+      "label": "Remotion 렌더 → mp4",
+      "sublabel": "릴스 9:16 · 유튜브 16:9",
+      "width": 180
+    }
+  ],
+  "edges": [
+    {
+      "id": "sources-convert",
+      "from": "sources",
+      "to": "convert"
+    },
+    {
+      "id": "convert-curate",
+      "from": "convert",
+      "to": "curate"
+    },
+    {
+      "id": "curate-sheets",
+      "from": "curate",
+      "to": "sheets"
+    },
+    {
+      "id": "sheets-pick",
+      "from": "sheets",
+      "to": "pick",
+      "label": "Read"
+    },
+    {
+      "id": "pick-selection",
+      "from": "pick",
+      "to": "selection"
+    },
+    {
+      "id": "selection-timeline",
+      "from": "selection",
+      "to": "timeline",
+      "label": "plan",
+      "variant": "emphasis"
+    },
+    {
+      "id": "timeline-cards",
+      "from": "timeline",
+      "to": "cards",
+      "label": "문구",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "timeline-studio",
+      "from": "timeline",
+      "to": "studio",
+      "label": "storyboard",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cards-studio",
+      "from": "cards",
+      "to": "studio",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "studio-review",
+      "from": "studio",
+      "to": "review"
+    },
+    {
+      "id": "review-selection",
+      "from": "review",
+      "to": "selection",
+      "label": "수정",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "review-render",
+      "from": "review",
+      "to": "render",
+      "label": "render"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "역할 분담",
+      "items": [
+        "Claude는 무엇을 넣을지와 문구만 정한다",
+        "몇 초에 놓을지는 Python이 결정적으로 계산한다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "원본 보호",
+      "items": [
+        "영상소스는 읽기만 하고 모든 결과는 .cache에",
+        "끊겨도 이미 변환한 파일은 다시 하지 않는다"
+      ]
+    }
+  ]
+}
