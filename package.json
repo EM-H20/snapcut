@@ -1,0 +1,15 @@
+{
+  "name": "snapcut",
+  "version": "0.1.0",
+  "description": "여행·행사 사진/영상을 음악 비트에 맞춘 추억 뮤비로 — Claude Code용",
+  "license": "MIT",
+  "bin": {
+    "snapcut": "bin/snapcut.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "os": [
+    "darwin"
+  ]
+}
