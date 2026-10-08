@@ -7,7 +7,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, highlights, intro, music, plan
+from . import contact, convert, curate, ff, highlights, intro, music, plan
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -45,12 +45,12 @@ def cmd_prepare(args) -> None:
     proj = cmd_convert(args)
     cands_f = proj.cache / "candidates.json"
     before = _candidate_files(cands_f)  # curate가 덮어쓰기 전에 읽는다
-    c = curate.curate(proj)
+    c = curate.curate(proj, keep_blur=args.keep_blur)
     if proj.selection.exists() and before is not None and before != [x["file"] for x in c["candidates"]]:
         print("주의: 후보 번호가 바뀌었습니다 — selection.json의 items를 새 시트 기준으로 다시 고르세요.")
     highlights.analyze_clips(proj, c["candidates"])
     sheets = contact.make_sheets(proj, c["candidates"])
-    print(f"후보 {len(c['candidates'])}개 (제외 {len(c['rejected'])}개: 흔들림/중복/라이브 포토)")
+    print(f"후보 {len(c['candidates'])}개 (제외 {len(c['rejected'])}개: {'' if args.keep_blur else '흔들림/'}중복/라이브 포토)")
     print("썸네일 시트:")
     for s in sheets:
         print(f"  {s}")
@@ -86,15 +86,34 @@ def _music(proj: Project, src: Path) -> tuple[str, dict]:
     return f"music/{dst.name}", analysis
 
 
-def _card(proj: Project, template: str, fmt: str, text: str, sub: str) -> str:
+def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
+    """카드 배경 bg.mp4: 고른 영상 구간을 카드 크기로 자르거나, 없으면 검은 화면."""
+    w, h = plan.FORMATS[fmt]["width"], plan.FORMATS[fmt]["height"]
+    key = hashlib.sha1(json.dumps([fmt, video]).encode()).hexdigest()[:10]
+    dst = proj.cache / "cards" / f"bg_{key}.mp4"
+    if not dst.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        part = dst.with_name(f"bg_{key}.part.mp4")
+        src = ["-ss", str(video[1]), "-i", str(proj.cache / video[0])] if video else \
+            ["-f", "lavfi", "-i", f"color=c=black:s={w}x{h}"]
+        try:
+            ff.run(*src, "-t", str(plan.CARD_SECONDS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={plan.FPS}", str(part))
+            os.replace(part, dst)
+        finally:
+            part.unlink(missing_ok=True)
+    return dst
+
+
+def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tuple[str, float] | None = None) -> str:
     mtime = intro.template_file(template, fmt).stat().st_mtime
-    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime], ensure_ascii=False).encode()).hexdigest()[:10]
+    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video], ensure_ascii=False).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         part = dst.with_name(f"{key}.part.mp4")
         try:
-            intro.render_card(template, fmt, text, sub, part)
+            intro.render_card(template, fmt, text, sub, part, _card_bg(proj, fmt, video))
             os.replace(part, dst)
         finally:
             part.unlink(missing_ok=True)
@@ -117,10 +136,11 @@ def cmd_plan(args) -> None:
     cands = json.loads(cands_f.read_text(encoding="utf-8"))["candidates"]
     hl = json.loads(hl_f.read_text(encoding="utf-8"))
     plan.resolve_items(sel, cands, hl)  # 오래 걸리는 음악 분석·카드 렌더 전에 selection 오류부터 잡는다
+    intro_video, outro_video = plan.card_video(sel, "introVideo", cands), plan.card_video(sel, "outroVideo", cands)
     music_src, analysis = _music(proj, _resolve_music(sel["music"]))
     template = sel.get("intro") or "basic"
-    cards = {f: {"intro": _card(proj, template, f, sel.get("title", ""), sel.get("subtitle", "")),
-                 "outro": _card(proj, template, f, sel.get("ending", ""), "")}
+    cards = {f: {"intro": _card(proj, template, f, sel.get("title", ""), sel.get("subtitle", ""), intro_video),
+                 "outro": _card(proj, template, f, sel.get("ending", ""), "", outro_video)}
              for f in formats if f in plan.FORMATS}
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -160,8 +180,11 @@ def cmd_music(args) -> None:
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="python -m pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("convert", "prepare", "plan", "studio"):
+    for name in ("convert", "plan", "studio"):
         sub.add_parser(name).add_argument("project")
+    pr = sub.add_parser("prepare")
+    pr.add_argument("project")
+    pr.add_argument("--keep-blur", action="store_true", help="흔들린 사진도 후보로 남긴다")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)

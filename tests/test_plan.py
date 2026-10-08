@@ -1,7 +1,7 @@
 import pytest
 
-from pipeline.plan import (FORMATS, INTRO_SECONDS, OUTRO_SECONDS, build_format, build_storyboard,
-                           fit, place, resolve_items, subsample)
+from pipeline.plan import (FORMATS, INTRO_SECONDS, MAX_PER_COLLAGE, OUTRO_SECONDS, build_format, build_storyboard,
+                           card_video, fit, place, resolve_items, subsample)
 
 BEATS = [round(i * 0.5, 3) for i in range(0, 241)]  # 120 BPM, 120초
 MUSIC = {"duration": 120.0, "bpm": 120.0, "beats": BEATS, "downbeats": BEATS[::4], "chorus": [60.0, 105.0]}
@@ -41,11 +41,41 @@ def test_place_reports_leftover():
     assert len(shots) == 3 and left == 7
 
 
-def test_fit_drops_evenly_keeping_first_and_last():
+def srcs(shot):
+    return shot.get("srcs") or [shot["src"]]
+
+
+def test_fit_keeps_single_photos_when_there_is_room():
+    shots, dropped = fit([photo(i) for i in range(5)], BEATS, 3.0, 13.0, 2)
+    assert dropped == 0 and [s["type"] for s in shots] == ["photo"] * 5
+
+
+def test_fit_packs_overflow_into_collages_instead_of_dropping():
+    items = [photo(i) for i in range(18)]
+    shots, dropped = fit(items, BEATS, 3.0, 13.0, 2)  # 10자리에 18장
+    assert dropped == 0 and len(shots) == 10
+    assert [src for s in shots for src in srcs(s)] == [it["src"] for it in items]  # 순서 유지, 전부 들어감
+    assert all(len(srcs(s)) <= MAX_PER_COLLAGE for s in shots)
+
+
+def test_fit_uses_as_few_collages_as_needed():
+    shots, dropped = fit([photo(i) for i in range(12)], BEATS, 3.0, 13.0, 2)
+    assert dropped == 0 and sorted(len(srcs(s)) for s in shots) == [1] * 8 + [2] * 2
+
+
+def test_collage_never_spans_a_video():
+    items = [photo(0), photo(1), video(dur=10.0, vin=0.0, vout=1.0), photo(2), photo(3)]
+    shots, dropped = fit(items, BEATS, 3.0, 6.0, 2)  # 6비트: 영상 2 + 사진 묶음 2
+    assert dropped == 0
+    assert [srcs(s) if s["type"] != "video" else "v" for s in shots] == [
+        ["media/p0.jpg", "media/p1.jpg"], "v", ["media/p2.jpg", "media/p3.jpg"]]
+
+
+def test_fit_drops_evenly_keeping_first_and_last_when_even_collages_overflow():
     items = [photo(i) for i in range(100)]
     shots, dropped = fit(items, BEATS, 3.0, 13.0, 2)
-    assert len(shots) == 10 and dropped == 90
-    assert shots[0]["src"] == "media/p0.jpg" and shots[-1]["src"] == "media/p99.jpg"
+    assert len(shots) == 10 and dropped == 100 - 10 * MAX_PER_COLLAGE
+    assert srcs(shots[0])[0] == "media/p0.jpg" and srcs(shots[-1])[-1] == "media/p99.jpg"
 
 
 @pytest.mark.parametrize("fmt", ["reels", "youtube"])
@@ -145,3 +175,79 @@ def test_resolve_items_rejects_malformed_items(sel):
 def test_build_storyboard_rejects_malformed_formats(formats):
     with pytest.raises(ValueError, match="formats"):
         build_storyboard({"formats": formats, "items": [{"id": 0}]}, CANDS, HL, MUSIC, "music/s.mp3", {})
+
+
+def test_card_video_optional_and_validated():
+    assert card_video({}, "introVideo", CANDS) is None
+    assert card_video({"introVideo": {"id": 1, "in": 2.0}}, "introVideo", CANDS) == ("media/v.mp4", 2.0)
+    with pytest.raises(ValueError, match="introVideo"):
+        card_video({"introVideo": {"id": 0}}, "introVideo", CANDS)  # 사진
+    with pytest.raises(ValueError, match="outroVideo"):
+        card_video({"outroVideo": {"id": 1, "in": 8.0}}, "outroVideo", CANDS)  # 3초가 영상 밖
+
+
+def test_photo_length_is_seconds_not_beats_so_fast_songs_dont_rush():
+    fast = dict(MUSIC, beats=[round(i * 0.35, 3) for i in range(340)])  # 171 BPM
+    shots = build_format("youtube", [photo(i) for i in range(5)], fast, CARDS)["shots"]
+    assert shots[1]["end"] - shots[1]["start"] == pytest.approx(2.1)  # 2초 → 6비트
+
+
+def test_photo_seconds_override_and_validation():
+    shots = build_format("youtube", [photo(i) for i in range(5)], MUSIC, CARDS, photo_seconds=3.0)["shots"]
+    assert shots[1]["end"] - shots[1]["start"] == pytest.approx(3.0)
+    sel = {"formats": ["youtube"], "photoSeconds": {"youtube": 3.0}, "items": [{"id": 0}]}
+    sb = build_storyboard(sel, CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS})
+    s = sb["formats"]["youtube"]["shots"][1]
+    assert s["end"] - s["start"] == pytest.approx(3.0)
+    with pytest.raises(ValueError, match="photoSeconds"):
+        build_storyboard(dict(sel, photoSeconds={"youtube": 0}), CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS})
+
+
+def test_reels_never_splits_the_screen():
+    plan = build_format("reels", [photo(i) for i in range(200)], MUSIC, CARDS)
+    assert not [s for s in plan["shots"] if s["type"] == "collage"]
+
+
+def mark(t):
+    return {"type": "mark", "at": t}
+
+
+def contiguous(shots):
+    return all(a["end"] == pytest.approx(b["start"]) for a, b in zip(shots, shots[1:]))
+
+
+def test_mark_anchors_next_item_and_stretches_previous_photo():
+    items = [photo(0), photo(1), mark(20.2), photo(2)]  # 20.2는 비트가 아님
+    shots = build_format("youtube", items, MUSIC, CARDS)["shots"]
+    assert [s["src"] for s in shots[1:-1]] == ["media/p0.jpg", "media/p1.jpg", "media/p2.jpg"]
+    assert shots[3]["start"] == 20.2 and shots[2]["end"] == 20.2
+    assert contiguous(shots)
+
+
+def test_marks_make_beat_hit_bursts():
+    hits = [30.1, 30.45, 30.8, 30.97]
+    items = [photo(0), mark(hits[0]), photo(1), mark(hits[1]), photo(2), mark(hits[2]), photo(3), mark(hits[3]), photo(4)]
+    shots = build_format("youtube", items, MUSIC, CARDS)["shots"][1:-1]
+    assert [(s["start"], s["end"]) for s in shots[1:4]] == [(30.1, 30.45), (30.45, 30.8), (30.8, 30.97)]
+    assert contiguous(shots)
+
+
+def test_mark_outside_window_is_ignored():
+    plan = build_format("reels", [photo(0), mark(10.0), photo(1)], MUSIC, CARDS)  # 릴스는 60~105초 구간
+    assert [s["src"] for s in plan["shots"][1:-1]] == ["media/p0.jpg", "media/p1.jpg"] and contiguous(plan["shots"])
+
+
+def test_solo_photo_is_never_collaged():
+    items = [photo(i) for i in range(12)]
+    items[3] = dict(items[3], solo=True)
+    items[4] = dict(items[4], solo=True)
+    shots, _ = fit(items, BEATS, 3.0, 13.0, 2)
+    assert not [s for s in shots if s["type"] == "collage" and ({"media/p3.jpg", "media/p4.jpg"} & set(s["srcs"]))]
+    assert not any("solo" in s for s in shots)
+
+
+def test_resolve_items_marks_and_solo():
+    items = resolve_items({"items": [{"at": 12.5}, {"id": 0, "solo": True}]}, CANDS, HL)
+    assert items == [{"type": "mark", "at": 12.5}, {"type": "photo", "src": "media/a.jpg", "solo": True}]
+    with pytest.raises(ValueError, match="at"):
+        resolve_items({"items": [{"at": "x"}]}, CANDS, HL)

@@ -23,6 +23,8 @@ def test_curate_drops_blur_and_burst_duplicate(sample_project):
     times = [c["taken_at"] for c in r["candidates"]]
     assert times == sorted(times)
     assert (proj.cache / "candidates.json").exists()
+    kept = curate(proj, keep_blur=True)
+    assert not [x for x in kept["rejected"] if x["reason"] == "흔들림"]  # 이 픽스처의 흔들린 사진은 IMG_0002의 사본이라 중복으로는 빠진다
 
 
 def test_curate_rejects_live_photo_mov(tmp_path):

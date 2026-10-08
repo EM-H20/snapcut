@@ -44,7 +44,7 @@ def _stem_key(item: dict) -> tuple:
     return src.parent, src.stem.lower()
 
 
-def curate(proj: Project) -> dict:
+def curate(proj: Project, keep_blur: bool = False) -> dict:
     items = json.loads((proj.cache / "manifest.json").read_text())["items"]
     items = sorted(items, key=lambda i: i["taken_at"])
     photos = [i for i in items if i["type"] == "photo"]
@@ -58,7 +58,7 @@ def curate(proj: Project) -> dict:
     rejected += [{"file": f, "reason": "라이브 포토"} for f in sorted(live)]
     items = [i for i in items if i["file"] not in live]
     for p in photos:
-        if scores[p["file"]] < BLUR_RATIO * median:
+        if not keep_blur and scores[p["file"]] < BLUR_RATIO * median:
             rejected.append({"file": p["file"], "reason": "흔들림"})
         else:
             sharp.append(p)

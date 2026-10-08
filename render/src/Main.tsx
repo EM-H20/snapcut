@@ -1,6 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Html5Audio, Sequence, staticFile, useVideoConfig} from 'remotion';
 import {ClipShot} from './ClipShot';
+import {CollageShot} from './CollageShot';
 import {musicVolume} from './duck';
 import {PhotoShot} from './PhotoShot';
 import {VideoShot} from './VideoShot';
@@ -25,6 +26,8 @@ export const Main: React.FC<Storyboard> = (props) => {
           <Sequence key={i} from={from} durationInFrames={frames}>
             {shot.type === 'photo' ? (
               <PhotoShot shot={shot} frames={frames} />
+            ) : shot.type === 'collage' ? (
+              <CollageShot shot={shot} frames={frames} />
             ) : shot.type === 'video' ? (
               <VideoShot shot={shot} />
             ) : (
