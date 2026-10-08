@@ -3,12 +3,13 @@
 여행·행사 후 쌓인 사진/영상을 음악 비트에 맞춘 추억 뮤비로 자동 편집. Claude Code에서 `/snapcut <영상명>`.
 
 ## 설치
+터미널에서 한 줄:
 ```bash
-git clone https://github.com/EM-H20/snapcut.git
-cd snapcut
-./install.sh
+npx github:EM-H20/snapcut
 ```
-`install.sh`가 한 번에 처리한다(여러 번 실행해도 안전).
+`~/snapcut`에 내려받고 설치까지 끝낸다. 다른 위치는 `npx github:EM-H20/snapcut ~/원하는/폴더`. 같은 명령을 다시 실행하면 최신 버전으로 업데이트된다.
+
+이미 클론했다면 `./install.sh`. 설치 스크립트가 한 번에 처리한다(여러 번 실행해도 안전).
 - ffmpeg·Node 22+·Python 3.13+ 확인 — 없으면 Homebrew로 설치
 - Python 가상환경(`.venv`)과 패키지, Remotion(`render/`), HyperFrames 내려받기
 - Finder 우클릭 변환 버튼 설치, `공용/음악/`·`projects/` 폴더 생성
