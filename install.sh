@@ -18,6 +18,7 @@ need() {  # $1 명령, $2 brew 패키지 — 없으면 Homebrew로 설치
 say "필수 도구 확인"
 need ffmpeg ffmpeg
 need node node
+need whisper-cli whisper-cpp  # 롱폼 자막 전사 — 모델(약 3GB)은 첫 전사 때 공용/모델/에 받는다
 node_major=$(node -p 'process.versions.node.split(".")[0]')
 [ "$node_major" -ge 22 ] || die "Node 22 이상이 필요합니다 (현재 $(node -v)). 'brew upgrade node' 후 다시 실행하세요."
 

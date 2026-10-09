@@ -10,7 +10,7 @@ npx github:EM-H20/snapcut
 (`npx`가 없으면 먼저 `brew install node`.) `~/snapcut`에 내려받고 설치까지 끝낸다. 다른 위치는 `npx github:EM-H20/snapcut ~/원하는/폴더`. 같은 명령을 다시 실행하면 최신 버전으로 업데이트된다.
 
 이미 클론했다면 `./install.sh`. 설치 스크립트가 한 번에 처리한다(여러 번 실행해도 안전).
-- ffmpeg·Node 22+·Python 3.13+ 확인 — 없으면 Homebrew로 설치
+- ffmpeg·Node 22+·Python 3.13+·whisper-cpp(롱폼 자막) 확인 — 없으면 Homebrew로 설치
 - Python 가상환경(`.venv`)과 패키지, Remotion(`render/`), HyperFrames 내려받기
 - Finder 우클릭 변환 버튼 설치, `공용/음악/`·`projects/` 폴더 생성
 
@@ -73,6 +73,14 @@ snapcut/
 ### 변환만 미리 하기
 사진을 넣자마자 변환해 두면 나중에 `/snapcut`이 빨라진다. Finder에서 `영상소스`(또는 프로젝트) 폴더 우클릭 → 빠른 동작 → **"snapcut 영상소스 변환"**. 끝나면 알림이 뜨고, 기록은 `~/Library/Logs/snapcut-convert.log`. 변환이 끝나기 전에 `/snapcut`을 같이 돌리지 않는다.
 
+### 롱폼: 긴 영상 하나 → 하이라이트 + 자막
+게임 방송·플레이 녹화처럼 끊기지 않는 긴 영상 하나를 `projects/<이름>/영상소스/`에 넣고 `/snapcut <이름>`.
+Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라이트 구간을 골라 자막을 박은 유튜브 편집본(16:9)과 `.srt`를 만든다.
+- 첫 전사 때 Whisper 모델(large-v3, 약 3GB)을 `공용/모델/`에 한 번 받는다. 메모리 16GB 이상 권장 (가벼운 모델: `WHISPER_MODEL=medium`).
+- 이미 받아 둔 whisper.cpp 모델(`ggml-large-v3.bin`, `ggml-silero-v6.2.0.bin`)이 있으면 `공용/모델/`에 넣거나 그 폴더를 링크하면 받지 않는다.
+- OBS처럼 오디오 트랙이 여러 개면 목소리 트랙을 고를 수 있다 (`--track 2`).
+- 완성본: `output/<이름>_longform.mp4`, `output/<이름>_longform.srt`(유튜브 자막 업로드용)
+
 ### 명령어로 직접 쓰기
 Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 ```bash
@@ -83,7 +91,8 @@ Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 | `convert <영상명>` | 형식 변환만 |
 | `prepare <영상명> [--keep-blur]` | 변환 + 선별 + 하이라이트 + 썸네일 시트(`.cache/sheets/`). `--keep-blur`면 흔들린 사진도 남김 |
 | `music` | `공용/음악/` 곡 목록 |
-| `plan <영상명>` | `selection.json` → 타임라인(`.cache/storyboard.json`) + 인트로/아웃트로 카드 |
+| `transcribe <영상명> [--track N] [--file 이름]` | 롱폼: 오디오 트랙 하나를 Whisper로 전사(`.cache/transcript.json`) + 큰 소리 순간 |
+| `plan <영상명>` | `selection.json` → 타임라인(`.cache/storyboard.json`) + 인트로/아웃트로 카드. `longform.json`이 있으면 롱폼 계획 |
 | `studio <영상명>` | 미리보기 열기 |
 | `render <영상명> --formats reels,youtube` | 완성 영상 렌더 |
 
