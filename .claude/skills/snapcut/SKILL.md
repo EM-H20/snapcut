@@ -33,9 +33,10 @@ description: 여행·행사 사진/영상 폴더를 음악 비트에 맞춘 추�
    {"clips": [{"in": 1834.2, "out": 1901.0, "title": "바론 스틸"}], "fixes": {"바로 스틸": "바론 스틸"}}
    ```
    `in/out`은 원본 기준 초. 문장 중간에 걸친 경계는 plan이 문장 밖으로 민다.
+   `"shorts": false`면 그 구간은 쇼츠를 만들지 않는다. 쇼츠는 1분 안팎 구간이 좋다.
 4. **plan** — `.venv/bin/python -m pipeline plan <영상명>`. `주의:` 줄은 그대로 전한다.
-5. **확인** — `studio`를 백그라운드로 띄우고 http://localhost:3000/longform 을 알려준다(reels/youtube 컴포지션은 롱폼에서 오류가 나는 게 정상). 수정은 longform.json을 고치고 plan 재실행 → 새로고침.
-6. **렌더** — `.venv/bin/python -m pipeline render <영상명>` → `output/<영상명>_longform.mp4` + `.srt`.
+5. **확인** — `studio`를 백그라운드로 띄우고 http://localhost:3000/longform 을 알려준다(쇼츠는 /shorts — 첫 클립)(reels/youtube 컴포지션은 롱폼에서 오류가 나는 게 정상). 수정은 longform.json을 고치고 plan 재실행 → 새로고침.
+6. **렌더** — `.venv/bin/python -m pipeline render <영상명>` → `output/<영상명>_longform.mp4` + `.srt`, 쇼츠는 `output/shorts/`.
 
 ## 템플릿 모드 (여행)
 친구 여행·수련회·가족 여행 등 여행 영상이면 `공용/템플릿/여행/template.json`(편집 문법: 손글씨 카드, 소리·속도, 오프닝 블러, 구간 마커, 3비트 사진 피날레, 크레딧 형식)을 쓴다. 템플릿에는 사람·문구가 없다 — 여행마다 정한다.

@@ -31,3 +31,31 @@ export const Longform: React.FC<LongStoryboard> = (sb) => {
     </AbsoluteFill>
   );
 };
+
+// 쇼츠: 같은 구간을 흐린 배경(꽉 채움)으로 깔고, 그 위에 게임 화면 전체를 가운데. 자막은 크게, 화면 아래쪽 1/4 위에
+export const Shorts: React.FC<LongStoryboard> = (sb) => {
+  const plan = sb.formats.shorts?.[sb.clip ?? 0];
+  if (!plan) return null;
+  return (
+    <AbsoluteFill style={{backgroundColor: 'black'}}>
+      <AbsoluteFill style={{filter: 'blur(40px) brightness(0.6)', transform: 'scale(1.15)'}}>
+        <MutedClips src={sb.src} clips={plan.clips} />
+      </AbsoluteFill>
+      <ClipsTrack src={sb.src} clips={plan.clips} />
+      <CaptionLayer captions={plan.captions} size={plan.width / 14} bottom={plan.height * 0.22} />
+    </AbsoluteFill>
+  );
+};
+
+const MutedClips: React.FC<{src: string; clips: LongClip[]}> = ({src, clips}) => {
+  const {fps} = useVideoConfig();
+  return (
+    <>
+      {clips.map((c, i) => (
+        <Sequence key={i} from={Math.round(c.start * fps)} durationInFrames={Math.round(c.end * fps) - Math.round(c.start * fps)} premountFor={fps}>
+          <OffthreadVideo src={staticFile(src)} trimBefore={Math.round(c.in * fps)} muted style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+        </Sequence>
+      ))}
+    </>
+  );
+};

@@ -9,7 +9,8 @@ FPS = 30
 PAD = 0.3  # 스냅한 경계 앞뒤 여유(초)
 MAX_SNAP_GROWTH = 10.0  # 스냅으로 이보다 길어지면 스냅하지 않는다
 MIN_VISIBLE = 0.2  # 클립 경계에 걸려 이보다 짧게 보일 자막은 뺀다
-FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": 44}}  # chars = 자막 한 장(2줄) 최대 글자 수
+FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": 44},
+           "shorts": {"width": 1080, "height": 1920, "chars": 28}}  # chars = 자막 한 장(2줄) 최대 글자 수
 
 
 def load_spec(path: Path) -> dict:
@@ -132,8 +133,18 @@ def build(spec: dict, transcript: dict, src: str) -> tuple[dict, list[str]]:
     formats = {}
     for f in spec["formats"]:
         fmt = FORMATS[f]
-        formats[f] = {"width": fmt["width"], "height": fmt["height"], "duration": t, "clips": clips,
-                      "captions": captions(clips, segs, spec["fixes"], fmt["chars"])}
+        if f == "shorts":  # 클립마다 0초부터 시작하는 계획 하나 (편집본과 같은 스냅 결과)
+            formats[f] = []
+            for c, orig in zip(clips, spec["clips"]):
+                if orig.get("shorts", True) is False:
+                    continue
+                one = {**c, "start": 0.0, "end": round(c["out"] - c["in"], 3)}
+                formats[f].append({"width": fmt["width"], "height": fmt["height"], "duration": one["end"],
+                                   "title": c["title"], "clips": [one],
+                                   "captions": captions([one], segs, spec["fixes"], fmt["chars"])})
+        else:
+            formats[f] = {"width": fmt["width"], "height": fmt["height"], "duration": t, "clips": clips,
+                          "captions": captions(clips, segs, spec["fixes"], fmt["chars"])}
     return {"mode": "longform", "fps": FPS, "src": src, "formats": formats}, warnings
 
 

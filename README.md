@@ -75,11 +75,11 @@ snapcut/
 
 ### 롱폼: 긴 영상 하나 → 하이라이트 + 자막
 게임 방송·플레이 녹화처럼 끊기지 않는 긴 영상 하나를 `projects/<이름>/영상소스/`에 넣고 `/snapcut <이름>`.
-Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라이트 구간을 골라 자막을 박은 유튜브 편집본(16:9)과 `.srt`를 만든다.
+Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라이트 구간을 골라 자막을 박은 유튜브 편집본(16:9)과 `.srt`를 만든다. 구간마다 쇼츠(9:16, 흐린 배경 + 화면 전체 + 큰 자막)도 `output/shorts/`에 만든다. 쇼츠를 원하지 않는 구간은 `"shorts": false`.
 - 첫 전사 때 Whisper 모델(large-v3, 약 3GB)을 `공용/모델/`에 한 번 받는다. 메모리 16GB 이상 권장 (가벼운 모델: `WHISPER_MODEL=medium`).
 - 이미 받아 둔 whisper.cpp 모델(`ggml-large-v3.bin`, `ggml-silero-v6.2.0.bin`)이 있으면 `공용/모델/`에 넣거나 그 폴더를 링크하면 받지 않는다.
 - OBS처럼 오디오 트랙이 여러 개면 목소리 트랙을 고를 수 있다 (`--track 2`).
-- 완성본: `output/<이름>_longform.mp4`, `output/<이름>_longform.srt`(유튜브 자막 업로드용)
+- 완성본: `output/<이름>_longform.mp4`, `output/<이름>_longform.srt`(유튜브 자막 업로드용), `output/shorts/<이름>_<번호>_<구간 제목>.mp4` + `.srt`
 
 ### 명령어로 직접 쓰기
 Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).

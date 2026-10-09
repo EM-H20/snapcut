@@ -31,11 +31,12 @@ def test_longform_plan_render_mkv(tmp_path):
           "segments": [{"start": 0.5, "end": 2.5, "text": "첫 번째 문장"}, {"start": 5.2, "end": 7.0, "text": "안 쓰는 문장"},
                        {"start": 11.0, "end": 12.5, "text": "세 번째 문장"}]}
     (tmp_path / ".cache" / "transcript.json").write_text(json.dumps(tr, ensure_ascii=False), encoding="utf-8")
-    spec = {"clips": [{"in": 1.0, "out": 4.0, "title": "시작"}, {"in": 10.0, "out": 14.0}]}
+    spec = {"clips": [{"in": 1.0, "out": 4.0, "title": "시작"}, {"in": 10.0, "out": 14.0}], "formats": ["longform", "shorts"]}
     (tmp_path / "longform.json").write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
 
     out = _cli("plan", str(tmp_path))
     assert "구간 2개, 자막 2개" in out
+    assert "shorts: 2개" in out
     _cli("render", str(tmp_path))
 
     video = tmp_path / "output" / f"{tmp_path.name}_longform.mp4"
@@ -46,6 +47,12 @@ def test_longform_plan_render_mkv(tmp_path):
     assert "00:00:00,300 --> 00:00:02,300\n첫 번째 문장" in srt
     assert "00:00:04,800 --> 00:00:06,300\n세 번째 문장" in srt
     assert "안 쓰는 문장" not in srt
+    short = tmp_path / "output" / "shorts" / f"{tmp_path.name}_01_시작.mp4"
+    s_info = ff.probe(short)
+    v = next(s for s in s_info["streams"] if s["codec_type"] == "video")
+    assert (v["width"], v["height"]) == (1080, 1920)
+    assert abs(float(s_info["format"]["duration"]) - 3.8) < 0.1
+    assert (tmp_path / "output" / "shorts" / f"{tmp_path.name}_02.mp4").exists()
 
 
 @pytest.mark.skipif(not (shutil.which("whisper-cli") and shutil.which("say")

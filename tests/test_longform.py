@@ -128,3 +128,17 @@ def test_srt_format():
     caps = [{"start": 0.3, "end": 2.3, "text": "첫 문장"}, {"start": 3661.5, "end": 3662.0, "text": "끝"}]
     assert longform.srt(caps) == ("1\n00:00:00,300 --> 00:00:02,300\n첫 문장\n\n"
                                   "2\n01:01:01,500 --> 01:01:02,000\n끝\n")
+
+
+def test_build_shorts_one_plan_per_clip_from_zero():
+    spec = {"clips": [{"in": 2.0, "out": 5.0, "title": "시작"}, {"in": 21.0, "out": 25.0, "shorts": False},
+                      {"in": 30.0, "out": 33.0, "title": "끝/결말"}],
+            "fixes": {}, "formats": ["longform", "shorts"]}
+    sb, _ = longform.build(spec, TRANSCRIPT, "src/g.mkv")
+    shorts = sb["formats"]["shorts"]
+    assert [s["title"] for s in shorts] == ["시작", "끝/결말"]
+    first = shorts[0]
+    assert (first["width"], first["height"], first["duration"]) == (1080, 1920, 4.3)
+    assert first["clips"] == [{"in": 0.7, "out": 5.0, "start": 0.0, "end": 4.3, "title": "시작"}]
+    assert first["captions"] == [{"start": 0.3, "end": 2.3, "text": "첫 문장"}]
+    assert shorts[1]["clips"][0]["start"] == 0.0  # 편집본에서는 9.6초부터지만 쇼츠는 0부터

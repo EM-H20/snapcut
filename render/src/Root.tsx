@@ -1,6 +1,6 @@
 import React from 'react';
 import {Composition, staticFile, type CalculateMetadataFunction} from 'remotion';
-import {Longform} from './Longform';
+import {Longform, Shorts} from './Longform';
 import {Main} from './Main';
 import type {FormatId, LongStoryboard, Storyboard} from './types';
 
@@ -36,10 +36,19 @@ const longformMetadata: CalculateMetadataFunction<LongStoryboard> = async () => 
   return {durationInFrames: Math.max(1, Math.round(plan.duration * FPS)), width: plan.width, height: plan.height, fps: FPS, props: sb};
 };
 
+const shortsMetadata: CalculateMetadataFunction<LongStoryboard> = async ({props}) => {
+  const sb = (await loadStoryboard()) as LongStoryboard;
+  const clip = props.clip ?? 0;
+  const plan = sb.mode === 'longform' ? sb.formats.shorts?.[clip] : undefined;
+  if (!plan) throw new Error(`쇼츠 ${clip + 1}번이 storyboard에 없습니다 — longform.json의 formats에 "shorts"를 넣고 plan을 다시 실행하세요.`);
+  return {durationInFrames: Math.max(1, Math.round(plan.duration * FPS)), width: plan.width, height: plan.height, fps: FPS, props: {...sb, clip}};
+};
+
 export const Root: React.FC = () => (
   <>
     <Composition id="reels" component={Main} width={1080} height={1920} fps={FPS} durationInFrames={1} defaultProps={EMPTY} calculateMetadata={metadataFor('reels')} />
     <Composition id="youtube" component={Main} width={1920} height={1080} fps={FPS} durationInFrames={1} defaultProps={EMPTY} calculateMetadata={metadataFor('youtube')} />
     <Composition id="longform" component={Longform} width={1920} height={1080} fps={FPS} durationInFrames={1} defaultProps={EMPTY_LONG} calculateMetadata={longformMetadata} />
+    <Composition id="shorts" component={Shorts} width={1080} height={1920} fps={FPS} durationInFrames={1} defaultProps={EMPTY_LONG} calculateMetadata={shortsMetadata} />
   </>
 );

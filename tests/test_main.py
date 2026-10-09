@@ -244,3 +244,21 @@ def test_render_longform_uses_cache_as_public_dir_and_writes_srt(monkeypatch, tm
     assert f"--public-dir={proj.cache}" in calls[0]
     srt = (proj.output / f"{proj.root.name}_longform.srt").read_text(encoding="utf-8")
     assert srt.startswith("1\n00:00:00,300 --> 00:00:02,300\n첫 문장")
+
+
+def test_render_shorts_one_render_per_clip_with_safe_names(monkeypatch, tmp_path):
+    proj = _longform_project(tmp_path)
+    (proj.root / "longform.json").write_text(json.dumps(
+        {"clips": [{"in": 2.0, "out": 5.0, "title": "바론/스틸?"}, {"in": 10.0, "out": 12.0}], "formats": ["shorts"]},
+        ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["plan", str(proj.root)])
+    calls = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    cli.main(["render", str(proj.root)])
+    outs = [c[5] for c in calls]
+    assert [c[4] for c in calls] == ["shorts", "shorts"]
+    assert outs == [str(proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.mp4"),
+                    str(proj.output / "shorts" / f"{proj.root.name}_02.mp4")]
+    assert '--props={"clip": 0}' in calls[0] and '--props={"clip": 1}' in calls[1]
+    assert (proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.srt").exists()

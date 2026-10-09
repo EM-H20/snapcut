@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import unicodedata
@@ -143,7 +144,10 @@ def cmd_plan_longform(proj: Project) -> None:
     sb, warnings = longform.build(spec, tr, "src/" + tr["source"])
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
     for f, p in sb["formats"].items():
-        print(f"  {f}: {p['duration'] / 60:.1f}분, 구간 {len(p['clips'])}개, 자막 {len(p['captions'])}개")
+        if f == "shorts":
+            print(f"  shorts: {len(p)}개 ({', '.join(f'{s['duration']:.0f}초' for s in p)})")
+        else:
+            print(f"  {f}: {p['duration'] / 60:.1f}분, 구간 {len(p['clips'])}개, 자막 {len(p['captions'])}개")
     for w in warnings:
         print(f"  주의: {w}")
 
@@ -204,15 +208,29 @@ def cmd_studio(args) -> None:
     subprocess.run(["npx", "remotion", "studio", "src/index.ts", f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
 
 
+def _safe(name: str) -> str:
+    return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_") if name else ""
+
+
+def _render_one(proj: Project, comp: str, out: Path, captions: list[dict], props: dict | None = None) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["npx", "remotion", "render", "src/index.ts", comp, str(out), f"--public-dir={proj.cache}"]
+    if props is not None:
+        cmd.append(f"--props={json.dumps(props)}")
+    if subprocess.run(cmd, cwd=RENDER_DIR).returncode:
+        raise SystemExit(f"{out.name} 렌더 실패")
+    out.with_suffix(".srt").write_text(longform.srt(captions), encoding="utf-8")
+    print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
+
+
 def _render_longform(proj: Project, sb: dict, formats: list[str]) -> None:
-    proj.output.mkdir(exist_ok=True)
     for f in formats:
-        out = proj.output / f"{proj.root.name}_{f}.mp4"
-        r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
-        if r.returncode:
-            raise SystemExit(f"{f} 렌더 실패")
-        out.with_suffix(".srt").write_text(longform.srt(sb["formats"][f]["captions"]), encoding="utf-8")
-        print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
+        if f == "shorts":
+            for i, s in enumerate(sb["formats"]["shorts"]):
+                name = "_".join(x for x in (proj.root.name, f"{i + 1:02d}", _safe(s["title"])) if x)
+                _render_one(proj, "shorts", proj.output / "shorts" / f"{name}.mp4", s["captions"], {"clip": i})
+        else:
+            _render_one(proj, f, proj.output / f"{proj.root.name}_{f}.mp4", sb["formats"][f]["captions"])
 
 
 def cmd_render(args) -> None:
