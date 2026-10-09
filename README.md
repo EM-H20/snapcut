@@ -78,7 +78,8 @@ snapcut/
 Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라이트 구간을 골라 자막을 박은 유튜브 편집본(16:9)과 `.srt`를 만든다. 구간마다 쇼츠(9:16, 흐린 배경 + 화면 전체 + 큰 자막)도 `output/shorts/`에 만든다. 쇼츠를 원하지 않는 구간은 `"shorts": false`.
 - 첫 전사 때 Whisper 모델(large-v3, 약 3GB)을 `공용/모델/`에 한 번 받는다. 메모리 16GB 이상 권장 (가벼운 모델: `WHISPER_MODEL=medium`).
 - 이미 받아 둔 whisper.cpp 모델(`ggml-large-v3.bin`, `ggml-silero-v6.2.0.bin`)이 있으면 `공용/모델/`에 넣거나 그 폴더를 링크하면 받지 않는다.
-- OBS처럼 오디오 트랙이 여러 개면 목소리 트랙을 고를 수 있다 (`--track 2`).
+- OBS에서 사람별로 트랙을 나눠 녹음했다면 `--track 2,3`처럼 여러 트랙을 전사해 `마이크1`, `마이크2` 이름표를 붙인다. 이름은 `longform.json`의 `"speakers": {"마이크1": "송하영"}`로 연결한다. 시점 주인(기본 마이크1)의 말은 아래 자막바, 다른 사람의 말은 왼쪽·오른쪽 말풍선으로 나온다.
+- 자막 모양은 `공용/자막/`의 스타일(`흰바`, `동글파랑`, `빨강정보`)에서 `"captionStyle"`로 고른다. 새 스타일은 같은 형식의 JSON을 추가하면 된다.
 - 완성본: `output/<이름>_longform.mp4`, `output/<이름>_longform.srt`(유튜브 자막 업로드용), `output/shorts/<이름>_<번호>_<구간 제목>.mp4` + `.srt`
 
 ### 명령어로 직접 쓰기
@@ -91,7 +92,7 @@ Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 | `convert <영상명>` | 형식 변환만 |
 | `prepare <영상명> [--keep-blur]` | 변환 + 선별 + 하이라이트 + 썸네일 시트(`.cache/sheets/`). `--keep-blur`면 흔들린 사진도 남김 |
 | `music` | `공용/음악/` 곡 목록 |
-| `transcribe <영상명> [--track N] [--file 이름]` | 롱폼: 오디오 트랙 하나를 Whisper로 전사(`.cache/transcript.json`) + 큰 소리 순간 |
+| `transcribe <영상명> [--track 2,3] [--file 이름]` | 롱폼: 오디오 트랙(여러 개면 사람별)을 Whisper로 전사(`.cache/transcript.json`) + 큰 소리 순간 |
 | `plan <영상명>` | `selection.json` → 타임라인(`.cache/storyboard.json`) + 인트로/아웃트로 카드. `longform.json`이 있으면 롱폼 계획 |
 | `studio <영상명>` | 미리보기 열기 |
 | `render <영상명> --formats reels,youtube` | 완성 영상 렌더 |
