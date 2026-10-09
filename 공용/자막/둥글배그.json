@@ -1,0 +1,28 @@
+{
+  "font": "\"Apple SD Gothic Neo\", \"Noto Sans KR\", sans-serif",
+  "bar": {
+    "background": "#ffffff",
+    "color": "#2f3e55",
+    "border": "3px solid #c9a86a",
+    "radius": 999,
+    "shadow": "9px 9px 0 #c9a86a",
+    "wide": true,
+    "align": "center"
+  },
+  "name": {
+    "background": "transparent",
+    "color": "#c9a86a",
+    "radius": 0,
+    "separator": false,
+    "position": "above",
+    "stroke": "#ffffff"
+  },
+  "bubble": {
+    "background": "#ffffff",
+    "color": "#2f3e55",
+    "border": "3px solid #c9a86a",
+    "radius": 36,
+    "shadow": "7px 7px 0 #c9a86a"
+  },
+  "icon": null
+}

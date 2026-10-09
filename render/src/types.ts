@@ -19,11 +19,12 @@ export type Storyboard = {
 
 export type Place = 'bar' | 'left' | 'right';
 export type Caption = {start: number; end: number; text: string; name?: string; place?: Place};
-type Box = {background: string; color: string; border: string; radius: number};
+type Box = {background: string; color: string; border: string; radius: number; shadow?: string};
 export type CaptionStyle = {
   font: string;
-  bar: Box;
-  name: {background: string; color: string; radius: number; separator: boolean} | null;
+  bar: Box & {wide?: boolean; align?: 'left' | 'center'};  // wide: 글자 길이와 상관없이 넓은 바
+  // position above: 바 왼쪽 위 바깥에 외곽선(stroke) 글씨로 / inline: 바 안 왼쪽 이름표
+  name: {background: string; color: string; radius: number; separator: boolean; position?: 'inline' | 'above'; stroke?: string} | null;
   bubble: Box;
   icon: 'play' | null;
 };

@@ -229,7 +229,7 @@ def test_srt_prefixes_name():
 
 def test_load_spec_speaker_fields(tmp_path):
     spec = longform.load_spec(write_spec(tmp_path, {"clips": [{"in": 1, "out": 2}]}))
-    assert spec["captionStyle"] == "흰바" and spec["speakers"] == {}
+    assert spec["captionStyle"] == "둥글배그" and spec["speakers"] == {}
     for bad, msg in [({"speakers": {"마이크1": {"name": "a", "side": "up"}}}, "마이크1"), ({"speakers": {"마이크1": 3}}, "마이크1"),
                      ({"speakers": []}, "speakers"), ({"pov": 1}, "pov"), ({"captionStyle": 2}, "captionStyle")]:
         with pytest.raises(ValueError, match=msg):
@@ -241,7 +241,7 @@ def test_load_style_and_shipped_styles(tmp_path):
     assert longform.load_style("a", tmp_path) == {"font": "x"}
     with pytest.raises(ValueError, match="가능: a"):
         longform.load_style("없음", tmp_path)
-    for name in ("흰바", "동글파랑", "빨강정보"):
+    for name in ("둥글배그", "흰바", "동글파랑", "빨강정보"):
         assert {"font", "bar", "name", "bubble", "icon"} <= set(longform.load_style(name))
 
 

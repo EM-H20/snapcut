@@ -67,22 +67,33 @@ const PlayIcon: React.FC<{size: number}> = ({size}) => (
   </span>
 );
 
-// 자막바: 가로는 [아이콘][이름 │ ]자막 한 줄 배치, 세로(쇼츠)는 폭이 좁아 이름표를 위쪽 테두리에 걸친다
+// 바 바깥 왼쪽 위에 뜨는 이름: 외곽선 글씨 (둥글핑크)
+const NameAbove: React.FC<{name: string; s: NonNullable<CaptionStyle['name']>; size: number}> = ({name, s, size}) => (
+  <span style={{position: 'absolute', bottom: '100%', left: size * 0.5, marginBottom: -size * 0.28, fontSize: size * 0.95,
+    fontWeight: 900, lineHeight: 1.15, whiteSpace: 'nowrap', color: s.color,
+    WebkitTextStroke: s.stroke ? `${size * 0.18}px ${s.stroke}` : undefined, paintOrder: 'stroke fill'}}>{name}</span>
+);
+
+// 자막바: 가로는 [아이콘][이름 │ ]자막 한 줄 배치, 세로(쇼츠)는 폭이 좁아 이름표를 위쪽 테두리에 걸친다. position above면 둘 다 바 위
 const Bar: React.FC<{c: Caption; s: CaptionStyle; size: number; inline: boolean}> = ({c, s, size, inline}) => {
   const name = c.name && s.name ? s.name : null;
+  const above = name?.position === 'above';
   return (
     <div style={{position: 'relative', display: 'flex', alignItems: 'center', gap: size * 0.35, maxWidth: '86%', fontSize: size,
+      width: s.bar.wide ? '86%' : undefined, justifyContent: s.bar.align === 'center' ? 'center' : 'flex-start',
       background: s.bar.background, color: s.bar.color, border: s.bar.border, borderRadius: s.bar.radius,
-      padding: `${size * 0.25}px ${size * 0.5}px`, marginTop: name && !inline ? size * 0.5 : 0, boxShadow: SHADOW}}>
+      padding: `${size * 0.25}px ${size * 0.5}px`, marginTop: above ? size * 0.75 : name && !inline ? size * 0.5 : 0,
+      boxShadow: s.bar.shadow ?? SHADOW}}>
       {s.icon === 'play' && <PlayIcon size={size} />}
-      {name && inline && <NameTag name={c.name!} s={name} size={size} />}
-      {name && inline && name.separator && <span style={{opacity: 0.45, flexShrink: 0}}>│</span>}
-      {name && !inline && (
+      {name && above && <NameAbove name={c.name!} s={name} size={size} />}
+      {name && !above && inline && <NameTag name={c.name!} s={name} size={size} />}
+      {name && !above && inline && name.separator && <span style={{opacity: 0.45, flexShrink: 0}}>│</span>}
+      {name && !above && !inline && (
         <span style={{position: 'absolute', top: -size * 0.55, left: size * 0.4, fontSize: size * 0.72}}>
           <NameTag name={c.name!} s={name.background === 'transparent' ? {...name, background: s.bar.background} : name} size={size * 0.72} />
         </span>
       )}
-      <span style={TEXT}>{c.text}</span>
+      <span style={{...TEXT, textAlign: s.bar.align === 'center' ? 'center' : undefined}}>{c.text}</span>
     </div>
   );
 };
@@ -90,7 +101,7 @@ const Bar: React.FC<{c: Caption; s: CaptionStyle; size: number; inline: boolean}
 // 말풍선: 이름은 윗줄 작게, 꼬리는 바깥 가장자리 쪽 아래
 const Bubble: React.FC<{c: Caption; s: CaptionStyle; size: number; side: 'left' | 'right'}> = ({c, s, size, side}) => (
   <div style={{position: 'relative', fontSize: size, background: s.bubble.background, color: s.bubble.color,
-    border: s.bubble.border, borderRadius: s.bubble.radius, padding: `${size * 0.35}px ${size * 0.6}px`, boxShadow: SHADOW}}>
+    border: s.bubble.border, borderRadius: s.bubble.radius, padding: `${size * 0.35}px ${size * 0.6}px`, boxShadow: s.bubble.shadow ?? SHADOW}}>
     {c.name && s.name && (
       <div style={{fontSize: size * 0.72, fontWeight: 900, marginBottom: size * 0.1,
         color: s.name.background === 'transparent' ? s.name.color : s.name.background}}>{c.name}</div>
