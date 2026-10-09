@@ -132,3 +132,73 @@ def test_section_report_line():
     line = cli.section_report({"브릿지": 126.76, "브레이크": 153.51, "마지막후렴": 163.79, "피날레": 174.78,
                                "estimated": ["브릿지"], "ignored": []})
     assert line == "구간: 브릿지 2:06.8(추정), 브레이크 2:33.5, 마지막후렴 2:43.8, 피날레 2:54.8"
+
+
+def test_render_uses_render_public_dir(monkeypatch, tmp_path):
+    from pipeline import render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {}}}))
+    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
+    monkeypatch.setattr(render_src, "clean", lambda root: None)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    seen = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: seen.append(cmd) or type("R", (), {"returncode": 0})())
+    cli.main(["render", str(proj.root)])
+    assert f"--public-dir={proj.cache / 'render'}" in seen[0]
+
+
+def test_card_bg_comes_from_hdr_original_as_sdr(tmp_path):
+    import subprocess
+    from pipeline import convert, ff
+    (tmp_path / "영상소스").mkdir()
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=4",
+                    "-c:v", "libx265", "-pix_fmt", "yuv420p10le",
+                    "-x265-params", "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error",
+                    "-tag:v", "hvc1", str(tmp_path / "영상소스" / "hdr.mp4")], check=True)
+    proj = Project(tmp_path)
+    item = convert.convert_project(proj)["items"][0]
+    (proj.cache / item["file"]).unlink()  # 경량 사본이 없어도 원본에서 뽑아야 한다 (지금 코드는 사본을 읽다 실패)
+    bg = cli._card_bg(proj, "reels", (item["file"], 0.5))
+    s = next(x for x in ff.probe(bg)["streams"] if x["codec_type"] == "video")
+    assert (s["width"], s["height"], s.get("color_transfer")) == (1080, 1920, "bt709")
+
+
+def test_render_validates_formats_before_building(monkeypatch, tmp_path):
+    from pipeline import render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {}}}))
+    built = []
+    monkeypatch.setattr(render_src, "build", lambda p, f: built.append(f))
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    with pytest.raises(SystemExit, match="bogus"):
+        cli.main(["render", str(proj.root), "--formats", "bogus"])
+    assert built == []  # 잘못된 형식이면 변환 전에 멈춘다
+
+
+def test_render_cleans_conversions_only_after_success(monkeypatch, tmp_path):
+    from pipeline import render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {}}}))
+    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
+    cleaned = []
+    monkeypatch.setattr(render_src, "clean", lambda root: cleaned.append(root))
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    code = {"rc": 1}
+    monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: type("R", (), {"returncode": code["rc"]})())
+    with pytest.raises(SystemExit, match="렌더 실패"):
+        cli.main(["render", str(proj.root)])
+    assert cleaned == []  # 실패하면 남겨 둔다
+    code["rc"] = 0
+    cli.main(["render", str(proj.root)])
+    assert cleaned == [proj.cache / "render"]
+
+
+def test_card_bg_missing_manifest_entry_is_korean_error(tmp_path):
+    from pipeline import convert
+    proj = _project(tmp_path)
+    convert.convert_project(proj)
+    with pytest.raises(ValueError, match="manifest"):
+        cli._card_bg(proj, "reels", ("media/nope_mp4.mp4", 0.0))

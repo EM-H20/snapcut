@@ -10,7 +10,7 @@ description: 여행·행사 사진/영상 폴더를 음악 비트에 맞춘 추�
 모든 명령은 저장소 루트에서 `.venv/bin/python -m pipeline ...`로 실행한다.
 
 ## 1. 준비
-`.venv/bin/python -m pipeline prepare <영상명>` — 변환·선별·하이라이트·썸네일 시트. 몇 분 걸릴 수 있으니 Bash `run_in_background`(또는 `timeout` 600000)로 실행하고 끝날 때까지 기다린다. 출력의 제외 목록, HDR 경고, 시각 정보 없는 항목 수를 사용자에게 한 줄씩 전한다. 사용자가 흔들린 사진도 원하면("추억이니까 다") `--keep-blur`로 실행한다.
+`.venv/bin/python -m pipeline prepare <영상명>` — 변환·선별·하이라이트·썸네일 시트. 몇 분 걸릴 수 있으니 Bash `run_in_background`(또는 `timeout` 600000)로 실행하고 끝날 때까지 기다린다. 출력의 제외 목록, 시각 정보 없는 항목 수를 사용자에게 한 줄씩 전한다. 사용자가 흔들린 사진도 원하면("추억이니까 다") `--keep-blur`로 실행한다.
 
 ## 2. 고르기
 - `.cache/sheets/sheet_*.jpg`를 **전부** Read로 본다. 칸의 `#번호` = `candidates.json`의 인덱스 = selection의 `id`. `V3s`는 영상(길이).
@@ -51,7 +51,7 @@ description: 여행·행사 사진/영상 폴더를 음악 비트에 맞춘 추�
 }
 ```
 영상 항목의 `in/out/liveAudio`는 생략하면 하이라이트 제안값을 쓴다. 하이라이트 제안은 결정적 순간(물에 빠짐 등)을 자주 놓치니, 재미있는 영상은 `ffmpeg ... -vf fps=4,tile=5x4`로 프레임 시트를 만들어 순간을 직접 찾아 `in/out`을 잡는다. 옆으로 누워 찍힌 영상(시트에서 사람이 가로로 누움)은 빼지 말고 `"rotate": -90`(또는 90/180)으로 세워 넣는다. 추억 영상에서는 같은 순간이면 사진보다 영상을 우선한다. 웃음·함성처럼 현장 소리를 살릴 장면만 `liveAudio: true`. 현장 소리를 살리되 음악을 줄이지 않으려면 그 항목에 `"duck": false`, 프로젝트 전체면 selection 최상위에 `"duck": false`. 모든 영상의 현장 소리를 켜려면("현장감 있게") 최상위에 `"liveAudio": true`(항목별 지정이 우선).
-`intro` 템플릿: `basic`(어두운 배경 + 고딕), `handwritten`(배경 영상 위 손글씨, 타이틀을 공백 단위로 대각선 배치 — "동심지키미 in 가평"). `introVideo`/`outroVideo`는 카드 배경 영상(후보 번호, 시작 초부터 3초). HDR이 아닌 영상이 색이 곱다.
+`intro` 템플릿: `basic`(어두운 배경 + 고딕), `handwritten`(배경 영상 위 손글씨, 타이틀을 공백 단위로 대각선 배치 — "동심지키미 in 가평"). `introVideo`/`outroVideo`는 카드 배경 영상(후보 번호, 시작 초부터 3초).
 
 ## 5. 타임라인 계산
 `.venv/bin/python -m pipeline plan <영상명>` — 형식별 길이·장면 수·뺀 항목 수를 사용자에게 전한다. 처음 카드를 렌더할 때(첫 실행, 문구·템플릿 변경 시)는 몇 분 걸리므로 Bash `run_in_background`(또는 `timeout` 600000)로 실행하고 기다린다.

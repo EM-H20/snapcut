@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,7 +9,8 @@ from PIL import Image, ImageCms
 import pytest
 
 from pipeline import ff
-from pipeline.convert import _display_size, _video_taken_at, convert_project, is_hdr, out_name
+from pipeline.convert import (VIDEO_ENCODE, _display_size, _rotation, _transpose, _video_taken_at, convert_project,
+                              is_hdr, out_name)
 from pipeline.paths import Project
 
 
@@ -50,7 +52,7 @@ def test_convert_project(sample_project):
     assert items[unicodedata.normalize("NFC", "제주 사진.png")]["file"].endswith("_png.jpg")
 
     v = items["IMG_0201.mp4"]
-    assert (v["width"], v["height"], v["has_audio"], v["hdr"]) == (720, 1280, False, False)
+    assert (v["width"], v["height"], v["has_audio"], v["hdr"]) == (540, 960, False, False)  # 720x1280 → 긴 변 960
     stream = next(s for s in ff.probe(sample_project / ".cache" / v["file"])["streams"] if s["codec_type"] == "video")
     assert stream["r_frame_rate"] == "30/1"
 
@@ -213,3 +215,80 @@ def test_video_converted_with_old_encoding_is_redone(tmp_path):
     convert_project(proj)
     assert out.stat().st_mtime_ns != before
     assert json.loads(manifest.read_text())["items"][0]["encode"]
+
+
+def _hdr_clip(path, size="640x360", pix_fmt="yuv420p10le", seconds=1):
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=30:duration={seconds}",
+                    "-c:v", "libx265", "-pix_fmt", pix_fmt,
+                    "-x265-params", "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error",
+                    "-tag:v", "hvc1", str(path)], check=True)
+
+
+def _vstream(path):
+    return next(s for s in ff.probe(path)["streams"] if s["codec_type"] == "video")
+
+
+def test_rotation_sign():
+    assert _rotation({"side_data_list": [{"rotation": 90}]}) == 90
+    assert _rotation({"side_data_list": [{"rotation": -90}]}) == -90
+    assert _rotation({"tags": {"rotate": "90"}}) == -90  # 구버전 rotate 태그는 시계 방향 = display matrix -90
+    assert _rotation({}) == 0
+
+
+def test_transpose_matches_ffmpeg_autorotate():
+    assert _transpose(90) == ["transpose=2"]
+    assert _transpose(-90) == ["transpose=1"]
+    assert _transpose(180) == ["hflip", "vflip"]
+    assert _transpose(0) == []
+
+
+def test_video_proxy_is_small(tmp_path):
+    (tmp_path / "영상소스").mkdir()
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=1",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(tmp_path / "영상소스" / "v.mp4")], check=True)
+    item = convert_project(Project(tmp_path))["items"][0]
+    assert (item["width"], item["height"], item["encode"]) == (960, 540, VIDEO_ENCODE)
+
+
+def test_hdr_proxy_is_tagged_sdr_and_keeps_rotation(tmp_path):
+    (tmp_path / "영상소스").mkdir()
+    _hdr_clip(tmp_path / "hdr.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-display_rotation", "90", "-i", str(tmp_path / "hdr.mp4"),
+                    "-c", "copy", str(tmp_path / "영상소스" / "rot.mp4")], check=True)
+    item = convert_project(Project(tmp_path))["items"][0]
+    assert item["hdr"] is True and (item["width"], item["height"]) == (360, 640)
+    s = _vstream(tmp_path / ".cache" / item["file"])
+    assert (s["width"], s["height"], s["pix_fmt"]) == (360, 640, "yuv420p")
+    assert (s.get("color_transfer"), s.get("color_primaries")) == ("bt709", "bt709")
+    assert not any("rotation" in d for d in s.get("side_data_list", []))  # 회전은 픽셀에 반영, 이중 회전 없음
+
+
+def test_hdr_8bit_hlg_converts(tmp_path):
+    (tmp_path / "영상소스").mkdir()
+    _hdr_clip(tmp_path / "영상소스" / "kakao.mp4", pix_fmt="yuv420p")  # 카톡 전송본처럼 8비트 HLG
+    m = convert_project(Project(tmp_path))
+    assert m["skipped"] == []
+    assert _vstream(tmp_path / ".cache" / m["items"][0]["file"]).get("color_transfer") == "bt709"
+
+
+def test_encode_bump_reconverts_videos_only(sample_project):
+    proj = Project(sample_project)
+    convert_project(proj)
+    manifest = proj.cache / "manifest.json"
+    data = json.loads(manifest.read_text())
+    for i in data["items"]:
+        if i["type"] == "video":
+            i["encode"] = "gop1s"  # 이전 인코딩 버전
+    manifest.write_text(json.dumps(data))
+    photo, video = proj.cache / "media" / "IMG_0000_jpg.jpg", proj.cache / "media" / "IMG_0201_mp4.mp4"
+    p0, v0 = photo.stat().st_mtime_ns, video.stat().st_mtime_ns
+    m = convert_project(proj)
+    assert photo.stat().st_mtime_ns == p0 and video.stat().st_mtime_ns != v0
+    assert {i["encode"] for i in m["items"] if i["type"] == "video"} == {VIDEO_ENCODE}
+
+
+def test_hdr_grade_applies_to_hdr_only():
+    from pipeline.convert import HDR_GRADE, video_input
+    hdr = {"color_transfer": "arib-std-b67", "pix_fmt": "yuv420p", "width": 1920, "height": 1080}
+    assert HDR_GRADE in video_input(Path("a.mp4"), hdr, 1920, 1080)[1]  # SDR로 누르면 탁해 보여 대비·채도를 살짝 올린다
+    assert HDR_GRADE not in video_input(Path("a.mp4"), {"width": 1920, "height": 1080}, 1920, 1080)[1]

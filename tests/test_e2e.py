@@ -31,6 +31,7 @@ def test_prepare_plan_render(sample_project):
     info = ff.probe(video)
     v = next(s for s in info["streams"] if s["codec_type"] == "video")
     assert (v["width"], v["height"]) == (1080, 1920)
+    assert (v["pix_fmt"], v.get("color_transfer")) == ("yuv420p", "bt709")  # 색 태그 없는 풀레인지면 재생기마다 색이 다름
     assert any(s["codec_type"] == "audio" for s in info["streams"])
     cards = list((sample_project / ".cache" / "cards").glob("*.mp4"))
     assert cards and all(not c.name.endswith(".part.mp4") for c in cards)

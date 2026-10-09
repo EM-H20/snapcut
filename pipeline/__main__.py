@@ -7,12 +7,13 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, music, plan, template
+from . import contact, convert, curate, ff, highlights, intro, music, plan, render_src, template
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
 MUSIC_DIR = SHARED / "음악"
 CREDITS_FONT = SHARED / "인트로아웃트로" / "handwritten" / "NanumPenScript-Regular.ttf"  # 크레딧 손글씨
+CARD_BG_SOURCE = "original-grade1"  # 카드 영상 배경을 원본에서 뽑는다 — 바꾸면 카드가 다시 만들어진다
 AUDIO_EXT = {".mp3", ".m4a", ".wav", ".aac", ".flac"}
 
 
@@ -26,9 +27,6 @@ def cmd_convert(args) -> Project:
     print(f"변환 완료: {len(m['items'])}개, 제외 {len(m['skipped'])}개")
     for s in m["skipped"]:
         print(f"  - {s['src']}: {s['reason']}")
-    hdr = [i["src"] for i in m["items"] if i.get("hdr")]
-    if hdr:
-        print(f"주의: HDR 영상 {len(hdr)}개 — 색이 바래 보일 수 있습니다: {', '.join(hdr[:5])}")
     no_time = [i["src"] for i in m["items"] if i["time_source"] == "mtime"]
     if no_time:
         print(f"참고: 촬영 시각 정보가 없어 파일 날짜로 정렬한 항목 {len(no_time)}개: {', '.join(no_time[:5])}")
@@ -89,7 +87,7 @@ def _music(proj: Project, src: Path) -> tuple[str, dict]:
 def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
     """카드 배경 bg.mp4: 고른 영상 구간을 카드 크기로 자르거나, 없으면 검은 화면."""
     w, h = plan.FORMATS[fmt]["width"], plan.FORMATS[fmt]["height"]
-    key = hashlib.sha1(json.dumps([fmt, video]).encode()).hexdigest()[:10]
+    key = hashlib.sha1(json.dumps([fmt, video, CARD_BG_SOURCE]).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"bg_{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -98,14 +96,19 @@ def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
         if photo:  # 사진 배경: 본편 사진 장면과 같은 배치(전체가 보이게 + 검은 띠)라 사진 → 카드가 이음매 없이 이어진다
             src, fit = ["-loop", "1", "-i", str(proj.cache / video[0])], \
                 f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black"
-        elif video:
-            src, fit = ["-ss", str(video[1]), "-i", str(proj.cache / video[0])], \
-                f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+        elif video:  # 영상 배경은 원본에서 (경량 사본은 960px라 카드에 부족)
+            src = render_src.original(convert.source_map(proj), video[0])
+            stream = next(s for s in ff.probe(src)["streams"] if s["codec_type"] == "video")
+            dw, dh = convert._display_size(stream)
+            k = max(w / dw, h / dh)  # 카드를 꽉 채우게 확대한 뒤 가운데 자르기
+            inp, vf = convert.video_input(src, stream, round(dw * k / 2) * 2, round(dh * k / 2) * 2)
+            src, fit = ["-ss", str(video[1]), *inp], f"{vf},crop={w}:{h}"
         else:
             src, fit = ["-f", "lavfi", "-i", f"color=c=black:s={w}x{h}"], f"scale={w}:{h}"
         try:
             ff.run(*src, "-t", str(plan.CARD_SECONDS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                   "-vf", f"{fit},setsar=1,fps={plan.FPS}", str(part))
+                   "-vf", f"{fit},setsar=1,fps={plan.FPS}",
+                   "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", str(part))
             os.replace(part, dst)
         finally:
             part.unlink(missing_ok=True)
@@ -115,7 +118,8 @@ def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
 def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tuple[str, float] | None = None) -> str:
     mtime = intro.template_file(template, fmt).stat().st_mtime
     layout = "center" if video and Path(video[0]).suffix.lower() == ".jpg" else "wide"  # 사진 배경이면 글씨를 사진 안쪽으로
-    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video, layout], ensure_ascii=False).encode()).hexdigest()[:10]
+    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video, layout, CARD_BG_SOURCE],
+                                  ensure_ascii=False).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -188,15 +192,18 @@ def cmd_render(args) -> None:
         raise SystemExit(f"먼저 plan을 실행하세요: python -m pipeline plan {args.project}")
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))
     formats = args.formats.split(",") if args.formats else list(sb["formats"])
-    proj.output.mkdir(exist_ok=True)
     for f in formats:
         if f not in sb["formats"]:
             raise SystemExit(f"storyboard에 '{f}' 형식이 없습니다. selection.json의 formats에 넣고 plan을 다시 실행하세요.")
+    public = render_src.build(proj, formats)  # 원본을 링크로 가리키는 렌더용 폴더 (Studio는 계속 .cache)
+    proj.output.mkdir(exist_ok=True)
+    for f in formats:
         out = proj.output / f"{proj.root.name}_{f}.mp4"
-        r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
+        r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={public}"], cwd=RENDER_DIR)
         if r.returncode:
             raise SystemExit(f"{f} 렌더 실패")
         print(f"완성: {out}")
+    render_src.clean(public)  # HDR·HEIC 변환본은 렌더가 끝나면 지운다
 
 
 def cmd_music(args) -> None:

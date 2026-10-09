@@ -7,3 +7,7 @@ if (existsSync(chrome)) {
   Config.setBrowserExecutable(chrome);
   Config.setChromeMode('chrome-for-testing');
 }
+// 색 태그 없는 풀레인지(yuvj420p) 출력은 재생기마다 색이 달라 보인다 → bt709로 태그해 렌더
+Config.setColorSpace('bt709');
+// 카톡 원본은 이미 압축돼 있어 세대 손실이 눈에 띈다 → 기본 18보다 낮춘다
+Config.setCrf(14);
