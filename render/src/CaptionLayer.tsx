@@ -25,7 +25,9 @@ export const CaptionLayer: React.FC<{captions: Caption[]; style?: CaptionStyle; 
   const bubbleSize = vertical ? width / 18 : height / 24;
   return (
     <AbsoluteFill style={{fontFamily: style.font}}>
-      <div style={{position: 'absolute', left: 0, right: 0, bottom: vertical ? height * 0.16 : height * 0.06,
+      {/* 세로(쇼츠): 게임 화면(16:9, 폭 맞춤) 바로 아래에 위쪽을 붙인다 — 아래로 내리면 쇼츠 제목·버튼 영역과 겹친다 */}
+      <div style={{position: 'absolute', left: 0, right: 0,
+        ...(vertical ? {top: (height + (width * 9) / 16) / 2 + barSize * 0.3} : {bottom: height * 0.06}),
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: barSize * 0.3}}>
         {now.bar.map((c, i) => <Bar key={i} c={c} s={style} size={barSize} inline={!vertical} />)}
       </div>

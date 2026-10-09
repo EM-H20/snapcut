@@ -12,6 +12,7 @@ MAX_SNAP_GROWTH = 10.0  # 스냅으로 이보다 길어지면 스냅하지 않�
 MIN_VISIBLE = 0.2  # 클립 경계에 걸려 이보다 짧게 보일 자막은 뺀다
 STYLES_DIR = SHARED / "자막"  # 자막바·말풍선 스타일 (공용, git 포함)
 DEFAULT_STYLE = "흰바"
+ICON_CHARS = 4  # 아이콘 있는 스타일(빨강정보)은 자막바 한 줄에서 약 2글자를 아이콘이 차지 → 한 장에서 4자 덜
 # chars = 자막 한 장(2줄) 최대 글자 수 — CaptionLayer.tsx의 폭·글자 크기와 짝 (bar: 자막바, bubble: 말풍선)
 FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": {"bar": 40, "bubble": 30}},
            "shorts": {"width": 1080, "height": 1920, "chars": {"bar": 22, "bubble": 22}}}
@@ -125,15 +126,22 @@ def layout(spec: dict, transcript: dict) -> tuple[dict, list[str]]:
     multi = len(labels) > 1
     pov = spec.get("pov", labels[0])
     speakers = spec.get("speakers", {})
-    who, others = {}, 0
+    fixed = {label: m["side"] for label, m in speakers.items() if isinstance(m, dict) and m.get("side")}
+    taken = {"left": 0, "right": 0}  # side를 정한 사람이 먼저 자리를 잡고, 나머지는 덜 찬 쪽으로(같으면 왼쪽)
+    for label in labels:
+        if multi and label != pov and label in fixed:
+            taken[fixed[label]] += 1
+    who = {}
     for label in labels:
         m = speakers.get(label)
         name = m if isinstance(m, str) else m["name"] if m else (label if multi else spec.get("speaker", ""))
         if not multi or label == pov:
             place = "bar"
+        elif label in fixed:
+            place = fixed[label]
         else:
-            place = (m.get("side") if isinstance(m, dict) else None) or ("left", "right")[others % 2]
-            others += 1
+            place = "left" if taken["left"] <= taken["right"] else "right"
+            taken[place] += 1
         who[label] = {"name": name, "place": place}
     unknown = [x for x in [*speakers, *([spec["pov"]] if "pov" in spec else [])] if x not in labels]
     warnings = [f"transcript에 없는 이름표: {', '.join(unknown)} (전사한 이름표: {', '.join(x for x in labels if x) or '없음'})"] \
@@ -196,6 +204,9 @@ def build(spec: dict, transcript: dict, src: str, style: dict | None = None) -> 
     formats = {}
     for f in spec["formats"]:
         fmt = FORMATS[f]
+        chars = dict(fmt["chars"])
+        if style and style.get("icon"):
+            chars["bar"] -= ICON_CHARS
         if f == "shorts":  # 클립마다 0초부터 시작하는 계획 하나 (편집본과 같은 스냅 결과)
             formats[f] = []
             for c, orig in zip(clips, kept):
@@ -204,10 +215,10 @@ def build(spec: dict, transcript: dict, src: str, style: dict | None = None) -> 
                 one = {**c, "start": 0.0, "end": round(c["out"] - c["in"], 3)}
                 formats[f].append({"width": fmt["width"], "height": fmt["height"], "duration": one["end"],
                                    "title": c["title"], "clips": [one],
-                                   "captions": captions([one], segs, spec["fixes"], fmt["chars"], who)})
+                                   "captions": captions([one], segs, spec["fixes"], chars, who)})
         else:
             formats[f] = {"width": fmt["width"], "height": fmt["height"], "duration": t, "clips": clips,
-                          "captions": captions(clips, segs, spec["fixes"], fmt["chars"], who)}
+                          "captions": captions(clips, segs, spec["fixes"], chars, who)}
     sb = {"mode": "longform", "fps": FPS, "src": src, "formats": formats}
     if style is not None:
         sb["captionStyle"] = style

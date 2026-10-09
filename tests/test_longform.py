@@ -199,7 +199,7 @@ def test_layout_names_side_and_pov_override():
     who, warnings = longform.layout(spec, TR2)
     assert who["마이크2"] == {"name": "정해인", "place": "bar"}
     assert who["마이크1"] == {"name": "송하영", "place": "right"}
-    assert who["마이크3"] == {"name": "마이크3", "place": "right"}  # 시점 주인이 아닌 두 번째 사람 → 기본 오른쪽
+    assert who["마이크3"] == {"name": "마이크3", "place": "left"}  # 마이크1이 오른쪽을 차지 → 남은 사람은 빈 왼쪽
     assert any("마이크9" in w for w in warnings)
 
 
@@ -251,3 +251,18 @@ def test_build_puts_style_and_speaker_places_in_storyboard():
     assert sb["captionStyle"] == {"font": "x"}
     assert [(c["name"], c["place"]) for c in sb["formats"]["longform"]["captions"]] == [
         ("송하영", "bar"), ("마이크2", "left"), ("마이크3", "right")]
+
+
+def test_fixed_side_pushes_others_to_the_free_side():
+    who, _ = longform.layout({"speakers": {"마이크2": {"name": "A", "side": "right"}}}, TR2)
+    assert (who["마이크2"]["place"], who["마이크3"]["place"]) == ("right", "left")
+
+
+def test_icon_style_shortens_bar_chunks():
+    text = "가나다 라마바 사아자 차카타 파하가 나다라"  # 23자
+    tr = {"duration": 60.0, "segments": [{"start": 1.0, "end": 3.0, "text": text}]}
+    spec = {"clips": [{"in": 0.0, "out": 10.0}], "fixes": {}, "formats": ["shorts"]}
+    plain, _ = longform.build(spec, tr, "src/g.mkv", {"icon": None})
+    icon, _ = longform.build(spec, tr, "src/g.mkv", {"icon": "play"})
+    assert max(len(c["text"]) for c in plain["formats"]["shorts"][0]["captions"]) > 18
+    assert max(len(c["text"]) for c in icon["formats"]["shorts"][0]["captions"]) <= 18  # 아이콘이 한 줄에서 약 2글자를 차지
