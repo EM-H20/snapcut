@@ -142,3 +142,31 @@ def test_build_shorts_one_plan_per_clip_from_zero():
     assert first["clips"] == [{"in": 0.7, "out": 5.0, "start": 0.0, "end": 4.3, "title": "시작"}]
     assert first["captions"] == [{"start": 0.3, "end": 2.3, "text": "첫 문장"}]
     assert shorts[1]["clips"][0]["start"] == 0.0  # 편집본에서는 9.6초부터지만 쇼츠는 0부터
+
+
+def test_clip_swallowed_by_previous_snap_is_dropped_not_zero_length():
+    tr = {"duration": 60.0, "segments": [seg(9.0, 15.0, "긴 말")]}
+    for second in ({"in": 10.5, "out": 11.0}, {"in": 12.0, "out": 15.1}):  # 앞 클립 끝이 15.3으로 스냅되어 덮음
+        spec = {"clips": [{"in": 0.0, "out": 10.0}, second], "fixes": {}, "formats": ["longform", "shorts"]}
+        sb, warnings = longform.build(spec, tr, "src/g.mkv")
+        assert [(c["in"], c["out"]) for c in sb["formats"]["longform"]["clips"]] == [(0.0, 15.3)]
+        assert len(sb["formats"]["shorts"]) == 1 and sb["formats"]["shorts"][0]["duration"] == 15.3
+        assert any("2번" in w and "앞 구간" in w for w in warnings)
+
+
+def test_shorts_flag_follows_its_clip_after_a_drop():
+    tr = {"duration": 60.0, "segments": [seg(9.0, 15.0, "긴 말")]}
+    spec = {"clips": [{"in": 0.0, "out": 10.0}, {"in": 10.5, "out": 11.0}, {"in": 20.0, "out": 25.0, "shorts": False}],
+            "fixes": {}, "formats": ["shorts"]}
+    sb, _ = longform.build(spec, tr, "src/g.mkv")
+    assert len(sb["formats"]["shorts"]) == 1  # 3번은 shorts: false — 2번이 빠져도 짝이 밀리지 않는다
+
+
+def test_clip_shorter_than_a_frame_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="너무 짧"):
+        longform.load_spec(write_spec(tmp_path, {"clips": [{"in": 30.0, "out": 30.01}]}))
+
+
+def test_shorts_caption_fits_two_lines():
+    # 쇼츠 자막은 폭 1080의 80%에 글자 크기 width/14 → 한 줄 약 11자, 한 장 2줄
+    assert longform.FORMATS["shorts"]["chars"] <= 2 * int(1080 * 0.8 / (1080 / 14))

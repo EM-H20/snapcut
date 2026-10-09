@@ -90,7 +90,7 @@ def test_failed_download_leaves_no_partial_file(tmp_path):
         def read(self, *a):
             raise OSError("연결 끊김")
 
-    with pytest.raises(OSError):
+    with pytest.raises(RuntimeError, match="연결 끊김"):
         transcribe.ensure_models(tmp_path, urlopen=lambda url: Broken(), say=lambda s: None)
     assert list(tmp_path.iterdir()) == []
 
@@ -141,3 +141,22 @@ def test_cli_transcribe_without_whisper_explains_install(proj, monkeypatch):
     with pytest.raises(SystemExit, match="brew install whisper-cpp"):
         cli.main(["transcribe", str(proj.root)])
     assert downloads == []  # whisper-cli가 없으면 3GB 모델을 받지 않는다
+
+
+def test_truncated_download_is_not_installed(tmp_path):
+    class Short(io.BytesIO):
+        headers = {"Content-Length": "100"}
+
+    with pytest.raises(RuntimeError, match="중간에 끊"):
+        transcribe.ensure_models(tmp_path, urlopen=lambda url: Short(b"only part"), say=lambda s: None)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_network_error_names_the_url(tmp_path):
+    import urllib.error
+
+    def fail(url):
+        raise urllib.error.URLError("no route")
+
+    with pytest.raises(RuntimeError, match="huggingface"):
+        transcribe.ensure_models(tmp_path, urlopen=fail, say=lambda s: None)

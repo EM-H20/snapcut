@@ -10,7 +10,7 @@ PAD = 0.3  # 스냅한 경계 앞뒤 여유(초)
 MAX_SNAP_GROWTH = 10.0  # 스냅으로 이보다 길어지면 스냅하지 않는다
 MIN_VISIBLE = 0.2  # 클립 경계에 걸려 이보다 짧게 보일 자막은 뺀다
 FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": 44},
-           "shorts": {"width": 1080, "height": 1920, "chars": 28}}  # chars = 자막 한 장(2줄) 최대 글자 수
+           "shorts": {"width": 1080, "height": 1920, "chars": 22}}  # chars = 자막 한 장(2줄) 최대 글자 수
 
 
 def load_spec(path: Path) -> dict:
@@ -28,6 +28,8 @@ def load_spec(path: Path) -> dict:
             raise ValueError(f"clips {k}번: in/out(원본 기준 초)은 숫자여야 합니다: {c!r}")
         if not 0 <= c["in"] < c["out"]:
             raise ValueError(f"clips {k}번: in({c['in']})이 out({c['out']})보다 작아야 합니다")
+        if c["out"] - c["in"] < 1 / FPS:
+            raise ValueError(f"clips {k}번: 구간이 너무 짧습니다 (한 프레임 미만)")
     fixes = spec.get("fixes", {})
     if not (isinstance(fixes, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in fixes.items())):
         raise ValueError('fixes는 {"틀린 말": "고친 말"} 형태여야 합니다')
@@ -116,7 +118,7 @@ def build(spec: dict, transcript: dict, src: str) -> tuple[dict, list[str]]:
     segs, duration = transcript["segments"], transcript["duration"]
     warnings = [f"반복 감지로 자막에서 뺀 구간 {_mmss(s['start'])}–{_mmss(s['end'])}"
                 for s in segs if s["text"].startswith(REPETITION_PLACEHOLDER)]
-    clips, t, prev_out = [], 0.0, None
+    clips, kept, t, prev_out = [], [], 0.0, None
     for k, c in enumerate(spec["clips"], 1):
         if c["out"] > duration:
             raise ValueError(f"clips {k}번: out({c['out']})이 영상 길이({duration:.1f}초)를 넘습니다")
@@ -127,15 +129,20 @@ def build(spec: dict, transcript: dict, src: str) -> tuple[dict, list[str]]:
             warnings.append(f"clips {k}번: 경계를 문장에 맞추면 {grew:.0f}초 늘어나 그대로 둡니다")
         if clips:
             a = max(a, clips[-1]["out"])  # 이웃 클립이 같은 문장으로 스냅되면 겹치지 않게 이어 붙인다
+        if b - a < 1 / FPS:  # 앞 클립의 스냅이 이 구간을 이미 덮었다
+            warnings.append(f"clips {k}번: 앞 구간에 이미 들어 있어 뺍니다")
+            prev_out = c["out"]
+            continue
         end = round(t + (b - a), 3)
         clips.append({"in": a, "out": b, "start": t, "end": end, "title": c.get("title", "")})
+        kept.append(c)
         t, prev_out = end, c["out"]
     formats = {}
     for f in spec["formats"]:
         fmt = FORMATS[f]
         if f == "shorts":  # 클립마다 0초부터 시작하는 계획 하나 (편집본과 같은 스냅 결과)
             formats[f] = []
-            for c, orig in zip(clips, spec["clips"]):
+            for c, orig in zip(clips, kept):
                 if orig.get("shorts", True) is False:
                     continue
                 one = {**c, "start": 0.0, "end": round(c["out"] - c["in"], 3)}

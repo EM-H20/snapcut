@@ -14,6 +14,7 @@ export const CaptionLayer: React.FC<{captions: Caption[]; size: number; bottom: 
       <div style={{
         maxWidth: '80%', textAlign: 'center', color: 'white', fontSize: size, fontWeight: 800, lineHeight: 1.3,
         wordBreak: 'keep-all', WebkitTextStroke: `${size / 10}px black`, paintOrder: 'stroke fill',
+        overflowWrap: 'anywhere',  // 띄어쓰기 없는 긴 말(ㅋㅋㅋ…)도 화면 안에서 줄바꿈
         fontFamily: '"Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
       }}>{text}</div>
     </AbsoluteFill>

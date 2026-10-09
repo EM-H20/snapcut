@@ -1,6 +1,7 @@
 """롱폼 전사: 원본의 오디오 트랙 하나 → 16kHz WAV → Whisper → .cache/transcript.json, 초 단위 음량 → .cache/loudness.json.
 원본 영상은 다시 인코딩하지 않는다. 모델(약 3GB)은 처음 한 번 공용/모델/에 받는다."""
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -81,7 +82,12 @@ def ensure_models(models: Path, urlopen=urllib.request.urlopen, say=print) -> No
         try:
             with urlopen(url) as response, part.open("wb") as out:
                 shutil.copyfileobj(response, out)
+                expected = (getattr(response, "headers", None) or {}).get("Content-Length")
+            if expected and part.stat().st_size != int(expected):  # 연결이 끊겨도 urllib은 조용히 EOF를 낸다
+                raise RuntimeError(f"{url}: 다운로드가 중간에 끊겼습니다 ({part.stat().st_size}/{expected}바이트) — 다시 실행하세요")
             part.rename(target)
+        except (OSError, http.client.HTTPException) as e:
+            raise RuntimeError(f"{url}: 모델을 받지 못했습니다 ({e}) — 인터넷 연결을 확인하고 다시 실행하세요") from e
         finally:
             part.unlink(missing_ok=True)
 
