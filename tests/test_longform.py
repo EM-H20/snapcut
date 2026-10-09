@@ -56,15 +56,15 @@ CLIPS = [{"in": 10.0, "out": 14.0, "start": 0.0, "end": 4.0}, {"in": 30.0, "out"
 def test_captions_are_remapped_and_clipped_to_each_clip():
     segs = [seg(12.0, 16.0, "첫 클립 끝에 걸침"), seg(29.0, 31.0, "둘째 클립 시작에 걸침"),
             seg(13.9, 14.1, "거의 안 보임"), seg(20.0, 22.0, "클립 밖")]
-    assert longform.captions(CLIPS, segs, {}, 44) == [
-        {"start": 2.0, "end": 4.0, "text": "첫 클립 끝에 걸침"},
-        {"start": 4.0, "end": 5.0, "text": "둘째 클립 시작에 걸침"},
+    assert longform.captions(CLIPS, segs, {}, {"bar": 44, "bubble": 44}) == [
+        {"start": 2.0, "end": 4.0, "text": "첫 클립 끝에 걸침", "name": "", "place": "bar"},
+        {"start": 4.0, "end": 5.0, "text": "둘째 클립 시작에 걸침", "name": "", "place": "bar"},
     ]
 
 
 def test_captions_apply_fixes_split_by_chars_and_skip_placeholders():
     segs = [seg(10.0, 14.0, "바로 스틸 각 잡자 지금 바로 스틸"), seg(30.0, 32.0, REPETITION_PLACEHOLDER + "반복")]
-    caps = longform.captions(CLIPS, segs, {"바로 스틸": "바론 스틸"}, 10)
+    caps = longform.captions(CLIPS, segs, {"바로 스틸": "바론 스틸"}, {"bar": 10, "bubble": 10})
     assert [c["text"] for c in caps] == ["바론 스틸 각 잡자", "지금 바론 스틸"]  # 10자는 한도 안
     assert caps[0]["start"] == 0.0 and caps[-1]["end"] == 4.0
     assert all(c["end"] > c["start"] for c in caps)
@@ -104,7 +104,7 @@ def test_build_storyboard_times_and_warnings():
     assert p["clips"] == [{"in": 0.7, "out": 5.0, "start": 0.0, "end": 4.3, "title": "시작"},
                           {"in": 19.7, "out": 25.0, "start": 4.3, "end": 9.6, "title": ""}]
     assert p["duration"] == 9.6
-    assert p["captions"][0] == {"start": 0.3, "end": 2.3, "text": "첫 문장"}
+    assert p["captions"][0] == {"start": 0.3, "end": 2.3, "text": "첫 문장", "name": "", "place": "bar"}
     assert any("반복" in w for w in warnings)
 
 
@@ -140,7 +140,7 @@ def test_build_shorts_one_plan_per_clip_from_zero():
     first = shorts[0]
     assert (first["width"], first["height"], first["duration"]) == (1080, 1920, 4.3)
     assert first["clips"] == [{"in": 0.7, "out": 5.0, "start": 0.0, "end": 4.3, "title": "시작"}]
-    assert first["captions"] == [{"start": 0.3, "end": 2.3, "text": "첫 문장"}]
+    assert first["captions"] == [{"start": 0.3, "end": 2.3, "text": "첫 문장", "name": "", "place": "bar"}]
     assert shorts[1]["clips"][0]["start"] == 0.0  # 편집본에서는 9.6초부터지만 쇼츠는 0부터
 
 
@@ -167,6 +167,87 @@ def test_clip_shorter_than_a_frame_is_rejected(tmp_path):
         longform.load_spec(write_spec(tmp_path, {"clips": [{"in": 30.0, "out": 30.01}]}))
 
 
-def test_shorts_caption_fits_two_lines():
-    # 쇼츠 자막은 폭 1080의 80%에 글자 크기 width/14 → 한 줄 약 11자, 한 장 2줄
-    assert longform.FORMATS["shorts"]["chars"] <= 2 * int(1080 * 0.8 / (1080 / 14))
+def test_caption_chars_fit_two_lines():
+    """CaptionLayer.tsx와 같은 치수: 폭 비율 × 화면 − 좌우 여백(글자 크기 배수) − 이름 칸, 글자 크기로 나눈 줄당 글자 × 2줄."""
+    def two_lines(box, size, pad, name=0.0):
+        return 2 * int((box - 2 * pad * size - name * size) / size)
+
+    lf, sh = longform.FORMATS["longform"]["chars"], longform.FORMATS["shorts"]["chars"]
+    assert lf["bar"] <= two_lines(1920 * 0.86, 1080 / 18, 0.5, name=5.2)  # 이름 4글자 + 구분선 + 간격
+    assert lf["bubble"] <= two_lines(1920 * 0.38, 1080 / 24, 0.6)
+    assert sh["bar"] <= two_lines(1080 * 0.86, 1080 / 14, 0.5)  # 세로는 이름이 윗줄
+    assert sh["bubble"] <= two_lines(1080 * 0.70, 1080 / 18, 0.6)
+
+
+TR2 = {"duration": 60.0,
+       "tracks": [{"track": 2, "label": "마이크1", "title": ""}, {"track": 3, "label": "마이크2", "title": ""},
+                  {"track": 4, "label": "마이크3", "title": ""}],
+       "segments": [{"start": 1.0, "end": 3.0, "text": "나", "speaker": "마이크1"},
+                    {"start": 2.0, "end": 4.0, "text": "친구", "speaker": "마이크2"},
+                    {"start": 2.5, "end": 3.5, "text": "셋째", "speaker": "마이크3"}]}
+
+
+def test_layout_pov_bar_others_alternate_sides():
+    who, warnings = longform.layout({}, TR2)
+    assert who == {"마이크1": {"name": "마이크1", "place": "bar"}, "마이크2": {"name": "마이크2", "place": "left"},
+                   "마이크3": {"name": "마이크3", "place": "right"}}
+    assert warnings == []
+
+
+def test_layout_names_side_and_pov_override():
+    spec = {"pov": "마이크2", "speakers": {"마이크1": {"name": "송하영", "side": "right"}, "마이크2": "정해인", "마이크9": "오타"}}
+    who, warnings = longform.layout(spec, TR2)
+    assert who["마이크2"] == {"name": "정해인", "place": "bar"}
+    assert who["마이크1"] == {"name": "송하영", "place": "right"}
+    assert who["마이크3"] == {"name": "마이크3", "place": "right"}  # 시점 주인이 아닌 두 번째 사람 → 기본 오른쪽
+    assert any("마이크9" in w for w in warnings)
+
+
+def test_single_track_is_bar_with_optional_speaker_name():
+    tr = {"duration": 60.0, "tracks": [{"track": 1, "label": "마이크1", "title": ""}], "segments": []}
+    assert longform.layout({}, tr)[0] == {"마이크1": {"name": "", "place": "bar"}}
+    assert longform.layout({"speaker": "송하영"}, tr)[0] == {"마이크1": {"name": "송하영", "place": "bar"}}
+    assert longform.layout({}, {"duration": 1.0, "segments": []})[0] == {"": {"name": "", "place": "bar"}}  # 예전 transcript
+
+
+def test_captions_carry_name_place_and_bubble_limit():
+    clips = [{"in": 0.0, "out": 10.0, "start": 0.0, "end": 10.0}]
+    segs = [{"start": 1.0, "end": 3.0, "text": "가나다 라마바 사아자", "speaker": "마이크1"},
+            {"start": 2.0, "end": 4.0, "text": "가나다 라마바 사아자", "speaker": "마이크2"}]
+    who = {"마이크1": {"name": "나", "place": "bar"}, "마이크2": {"name": "친구", "place": "left"}}
+    caps = longform.captions(clips, segs, {}, {"bar": 20, "bubble": 6}, who)
+    assert [(c["text"], c["name"], c["place"]) for c in caps] == [
+        ("가나다 라마바 사아자", "나", "bar"), ("가나다", "친구", "left"), ("라마바", "친구", "left"), ("사아자", "친구", "left")]
+
+
+def test_srt_prefixes_name():
+    caps = [{"start": 0.0, "end": 1.0, "text": "안녕", "name": "송하영", "place": "bar"},
+            {"start": 1.0, "end": 2.0, "text": "응", "name": "", "place": "bar"}]
+    assert longform.srt(caps) == ("1\n00:00:00,000 --> 00:00:01,000\n송하영: 안녕\n\n"
+                                  "2\n00:00:01,000 --> 00:00:02,000\n응\n")
+
+
+def test_load_spec_speaker_fields(tmp_path):
+    spec = longform.load_spec(write_spec(tmp_path, {"clips": [{"in": 1, "out": 2}]}))
+    assert spec["captionStyle"] == "흰바" and spec["speakers"] == {}
+    for bad, msg in [({"speakers": {"마이크1": {"name": "a", "side": "up"}}}, "마이크1"), ({"speakers": {"마이크1": 3}}, "마이크1"),
+                     ({"speakers": []}, "speakers"), ({"pov": 1}, "pov"), ({"captionStyle": 2}, "captionStyle")]:
+        with pytest.raises(ValueError, match=msg):
+            longform.load_spec(write_spec(tmp_path, {"clips": [{"in": 1, "out": 2}], **bad}))
+
+
+def test_load_style_and_shipped_styles(tmp_path):
+    (tmp_path / "a.json").write_text('{"font": "x"}', encoding="utf-8")
+    assert longform.load_style("a", tmp_path) == {"font": "x"}
+    with pytest.raises(ValueError, match="가능: a"):
+        longform.load_style("없음", tmp_path)
+    for name in ("흰바", "동글파랑", "빨강정보"):
+        assert {"font", "bar", "name", "bubble", "icon"} <= set(longform.load_style(name))
+
+
+def test_build_puts_style_and_speaker_places_in_storyboard():
+    spec = {"clips": [{"in": 0.0, "out": 10.0}], "fixes": {}, "formats": ["longform"], "speakers": {"마이크1": "송하영"}}
+    sb, _ = longform.build(spec, TR2, "src/g.mkv", {"font": "x"})
+    assert sb["captionStyle"] == {"font": "x"}
+    assert [(c["name"], c["place"]) for c in sb["formats"]["longform"]["captions"]] == [
+        ("송하영", "bar"), ("마이크2", "left"), ("마이크3", "right")]

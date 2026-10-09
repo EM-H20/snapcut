@@ -1,0 +1,7 @@
+{
+  "font": "\"Apple SD Gothic Neo\", \"Noto Sans KR\", sans-serif",
+  "bar": {"background": "#ffffff", "color": "#111111", "border": "4px solid #1f4fd8", "radius": 44},
+  "name": {"background": "#1f6feb", "color": "#ffffff", "radius": 999, "separator": false},
+  "bubble": {"background": "#ffffff", "color": "#111111", "border": "4px solid #1f4fd8", "radius": 32},
+  "icon": null
+}

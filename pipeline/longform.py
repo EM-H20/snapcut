@@ -3,14 +3,18 @@
 import json
 from pathlib import Path
 
+from .paths import SHARED
 from .whisper import REPETITION_PLACEHOLDER
 
 FPS = 30
 PAD = 0.3  # 스냅한 경계 앞뒤 여유(초)
 MAX_SNAP_GROWTH = 10.0  # 스냅으로 이보다 길어지면 스냅하지 않는다
 MIN_VISIBLE = 0.2  # 클립 경계에 걸려 이보다 짧게 보일 자막은 뺀다
-FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": 44},
-           "shorts": {"width": 1080, "height": 1920, "chars": 22}}  # chars = 자막 한 장(2줄) 최대 글자 수
+STYLES_DIR = SHARED / "자막"  # 자막바·말풍선 스타일 (공용, git 포함)
+DEFAULT_STYLE = "흰바"
+# chars = 자막 한 장(2줄) 최대 글자 수 — CaptionLayer.tsx의 폭·글자 크기와 짝 (bar: 자막바, bubble: 말풍선)
+FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": {"bar": 40, "bubble": 30}},
+           "shorts": {"width": 1080, "height": 1920, "chars": {"bar": 22, "bubble": 22}}}
 
 
 def load_spec(path: Path) -> dict:
@@ -36,7 +40,21 @@ def load_spec(path: Path) -> dict:
     formats = spec.get("formats", list(FORMATS))
     if not isinstance(formats, list) or not formats or any(f not in FORMATS for f in formats):
         raise ValueError(f"formats는 {', '.join(FORMATS)} 중에서 고릅니다: {formats!r}")
-    return {**spec, "fixes": fixes, "formats": formats}
+    style = spec.get("captionStyle", DEFAULT_STYLE)
+    if not isinstance(style, str):
+        raise ValueError("captionStyle은 공용/자막의 스타일 이름이어야 합니다")
+    speakers = spec.get("speakers", {})
+    if not isinstance(speakers, dict):
+        raise ValueError('speakers는 {"마이크1": "이름"} 형태여야 합니다')
+    for label, v in speakers.items():
+        name = v if isinstance(v, str) else v.get("name") if isinstance(v, dict) else None
+        side_ok = not isinstance(v, dict) or v.get("side", "left") in ("left", "right")
+        if not isinstance(name, str) or not side_ok:
+            raise ValueError(f'speakers의 {label}: "이름" 또는 {{"name": "이름", "side": "left"|"right"}} 형태여야 합니다')
+    for key in ("pov", "speaker"):
+        if key in spec and not isinstance(spec[key], str):
+            raise ValueError(f"{key}는 문자열이어야 합니다")
+    return {**spec, "fixes": fixes, "formats": formats, "captionStyle": style, "speakers": speakers}
 
 
 def _inside(t: float, segments: list[dict]) -> int | None:
@@ -90,7 +108,41 @@ def _timed(start: float, end: float, text: str, limit: int) -> list[dict]:
     return out
 
 
-def captions(clips: list[dict], segments: list[dict], fixes: dict, limit: int) -> list[dict]:
+def load_style(name: str, root: Path = STYLES_DIR) -> dict:
+    path = root / f"{name}.json"
+    if not path.is_file():
+        names = sorted(p.stem for p in root.glob("*.json")) if root.exists() else []
+        raise ValueError(f"자막 스타일 '{name}'이 없습니다 (가능: {', '.join(names) or '없음'})")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise ValueError(f"자막 스타일 파일을 읽을 수 없습니다 ({path}): {e}")
+
+
+def layout(spec: dict, transcript: dict) -> tuple[dict, list[str]]:
+    """이름표(마이크k) → {"name", "place"}. 시점 주인은 자막바, 나머지는 고정된 쪽 말풍선(기본: 트랙 순서대로 왼쪽·오른쪽 교대)."""
+    labels = [t["label"] for t in transcript.get("tracks", [])] or [""]  # 예전 transcript는 이름표 없음
+    multi = len(labels) > 1
+    pov = spec.get("pov", labels[0])
+    speakers = spec.get("speakers", {})
+    who, others = {}, 0
+    for label in labels:
+        m = speakers.get(label)
+        name = m if isinstance(m, str) else m["name"] if m else (label if multi else spec.get("speaker", ""))
+        if not multi or label == pov:
+            place = "bar"
+        else:
+            place = (m.get("side") if isinstance(m, dict) else None) or ("left", "right")[others % 2]
+            others += 1
+        who[label] = {"name": name, "place": place}
+    unknown = [x for x in [*speakers, *([spec["pov"]] if "pov" in spec else [])] if x not in labels]
+    warnings = [f"transcript에 없는 이름표: {', '.join(unknown)} (전사한 이름표: {', '.join(x for x in labels if x) or '없음'})"] \
+        if unknown else []
+    return who, warnings
+
+
+def captions(clips: list[dict], segments: list[dict], fixes: dict, chars: dict, who: dict | None = None) -> list[dict]:
+    who = who or {}
     cues = []
     for s in segments:
         if s["text"].startswith(REPETITION_PLACEHOLDER):
@@ -98,14 +150,16 @@ def captions(clips: list[dict], segments: list[dict], fixes: dict, limit: int) -
         text = s["text"]
         for wrong, right in fixes.items():
             text = text.replace(wrong, right)
-        cues += _timed(s["start"], s["end"], text, limit)
+        w = who.get(s.get("speaker", ""), {"name": "", "place": "bar"})
+        limit = chars["bar"] if w["place"] == "bar" else chars["bubble"]
+        cues += [{**q, **w} for q in _timed(s["start"], s["end"], text, limit)]
     out = []
     for c in clips:
         for q in cues:
             a, b = max(q["start"], c["in"]), min(q["end"], c["out"])
             if b - a >= MIN_VISIBLE:
                 out.append({"start": round(a - c["in"] + c["start"], 3), "end": round(b - c["in"] + c["start"], 3),
-                            "text": q["text"]})
+                            "text": q["text"], "name": q["name"], "place": q["place"]})
     return out
 
 
@@ -114,10 +168,12 @@ def _mmss(t: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def build(spec: dict, transcript: dict, src: str) -> tuple[dict, list[str]]:
+def build(spec: dict, transcript: dict, src: str, style: dict | None = None) -> tuple[dict, list[str]]:
     segs, duration = transcript["segments"], transcript["duration"]
     warnings = [f"반복 감지로 자막에서 뺀 구간 {_mmss(s['start'])}–{_mmss(s['end'])}"
                 for s in segs if s["text"].startswith(REPETITION_PLACEHOLDER)]
+    who, speaker_warnings = layout(spec, transcript)
+    warnings += speaker_warnings
     clips, kept, t, prev_out = [], [], 0.0, None
     for k, c in enumerate(spec["clips"], 1):
         if c["out"] > duration:
@@ -148,11 +204,14 @@ def build(spec: dict, transcript: dict, src: str) -> tuple[dict, list[str]]:
                 one = {**c, "start": 0.0, "end": round(c["out"] - c["in"], 3)}
                 formats[f].append({"width": fmt["width"], "height": fmt["height"], "duration": one["end"],
                                    "title": c["title"], "clips": [one],
-                                   "captions": captions([one], segs, spec["fixes"], fmt["chars"])})
+                                   "captions": captions([one], segs, spec["fixes"], fmt["chars"], who)})
         else:
             formats[f] = {"width": fmt["width"], "height": fmt["height"], "duration": t, "clips": clips,
-                          "captions": captions(clips, segs, spec["fixes"], fmt["chars"])}
-    return {"mode": "longform", "fps": FPS, "src": src, "formats": formats}, warnings
+                          "captions": captions(clips, segs, spec["fixes"], fmt["chars"], who)}
+    sb = {"mode": "longform", "fps": FPS, "src": src, "formats": formats}
+    if style is not None:
+        sb["captionStyle"] = style
+    return sb, warnings
 
 
 def _ts(t: float) -> str:
@@ -164,4 +223,6 @@ def _ts(t: float) -> str:
 
 
 def srt(caps: list[dict]) -> str:
-    return "\n".join(f"{i}\n{_ts(c['start'])} --> {_ts(c['end'])}\n{c['text']}\n" for i, c in enumerate(caps, 1))
+    def line(c):
+        return f"{c['name']}: {c['text']}" if c.get("name") else c["text"]
+    return "\n".join(f"{i}\n{_ts(c['start'])} --> {_ts(c['end'])}\n{line(c)}\n" for i, c in enumerate(caps, 1))

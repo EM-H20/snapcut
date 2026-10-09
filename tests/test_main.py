@@ -262,3 +262,12 @@ def test_render_shorts_one_render_per_clip_with_safe_names(monkeypatch, tmp_path
                     str(proj.output / "shorts" / f"{proj.root.name}_02.mp4")]
     assert '--props={"clip": 0}' in calls[0] and '--props={"clip": 1}' in calls[1]
     assert (proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.srt").exists()
+
+
+def test_plan_longform_unknown_style_lists_choices(monkeypatch, tmp_path):
+    proj = _longform_project(tmp_path)
+    (proj.root / "longform.json").write_text(json.dumps(
+        {"clips": [{"in": 2.0, "out": 5.0}], "captionStyle": "없는스타일"}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    with pytest.raises(SystemExit, match="흰바"):
+        cli.main(["plan", str(proj.root)])

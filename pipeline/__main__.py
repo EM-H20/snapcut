@@ -141,7 +141,8 @@ def cmd_plan_longform(proj: Project) -> None:
         raise SystemExit(f"먼저 transcribe를 실행하세요: python -m pipeline transcribe {proj.root.name}")
     tr = json.loads(tf.read_text(encoding="utf-8"))
     render_src._link(proj.cache / "src", proj.sources)  # Studio·렌더 모두 .cache를 public dir로 쓰고 원본은 링크로 본다
-    sb, warnings = longform.build(spec, tr, "src/" + tr["source"])
+    style = longform.load_style(spec["captionStyle"])
+    sb, warnings = longform.build(spec, tr, "src/" + tr["source"], style)
     proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
     for f, p in sb["formats"].items():
         if f == "shorts":
