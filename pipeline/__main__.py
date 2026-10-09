@@ -262,13 +262,15 @@ def _mmss(sec: float) -> str:
 
 def cmd_transcribe(args) -> None:
     proj = project(args.project)
+    tracks = transcribe.parse_tracks(args.track)
     src = transcribe.source_video(proj, args.file)
-    tracks = transcribe.audio_tracks(src)
+    available = transcribe.audio_tracks(src)
     print(f"원본: {src.relative_to(proj.sources).as_posix()}")
     print("오디오 트랙: " + (", ".join(f"{t['track']}번({t['channels']}ch{' ' + t['title'] if t['title'] else ''})"
-                                    for t in tracks) or "없음"))
-    t = transcribe.transcribe_project(proj, args.file, args.track)
-    print(f"전사 완료 (트랙 {t['track']}, {t['model']}): {t['duration'] / 60:.1f}분, 문장 {len(t['segments'])}개")
+                                    for t in available) or "없음"))
+    t = transcribe.transcribe_project(proj, args.file, tracks)
+    who = ", ".join(f"{x['label']}={x['track']}번" + (f"({x['title']})" if x["title"] else "") for x in t["tracks"])
+    print(f"전사 완료 ({t['model']}): {t['duration'] / 60:.1f}분, 문장 {len(t['segments'])}개 — {who}")
     if not t["segments"]:
         print("주의: 인식된 말이 없습니다 — 목소리가 다른 트랙에 있으면 --track으로 다시 실행하세요")
     db = json.loads((proj.cache / "loudness.json").read_text(encoding="utf-8"))["db"]
@@ -290,7 +292,7 @@ def main(argv=None) -> None:
     pr.add_argument("--keep-blur", action="store_true", help="흔들린 사진도 후보로 남긴다")
     tr = sub.add_parser("transcribe")
     tr.add_argument("project")
-    tr.add_argument("--track", type=int, default=1, help="전사할 오디오 트랙 번호 (1부터, OBS 1번 = 전체 믹스)")
+    tr.add_argument("--track", default="1", help="전사할 오디오 트랙 번호. 사람별 트랙이면 2,3처럼 여러 개 (1부터, OBS 1번 = 전체 믹스)")
     tr.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
     r = sub.add_parser("render")
     r.add_argument("project")

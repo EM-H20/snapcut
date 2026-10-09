@@ -92,22 +92,35 @@ def ensure_models(models: Path, urlopen=urllib.request.urlopen, say=print) -> No
             part.unlink(missing_ok=True)
 
 
+def parse_tracks(text: str) -> list[int]:
+    try:
+        tracks = [int(x) for x in text.split(",") if x.strip()]
+    except ValueError:
+        raise ValueError(f"--track은 1 또는 2,3처럼 번호로 적습니다: {text!r}")
+    if not tracks or len(set(tracks)) != len(tracks):
+        raise ValueError(f"--track은 겹치지 않는 번호 목록이어야 합니다: {text!r}")
+    return tracks
+
+
 def _write(path: Path, data: dict) -> None:
     tmp = path.with_name(path.name + ".part")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, path)
 
 
-def transcribe_project(proj: Project, file: str | None = None, track: int = 1, engine_factory=WhisperCli.from_env,
+def transcribe_project(proj: Project, file: str | None = None, tracks=(1,), engine_factory=WhisperCli.from_env,
                        models: Path = MODELS_DIR, download=None) -> dict:
+    """tracks: 전사할 트랙 번호들. 고른 순서대로 마이크1, 마이크2… 이름표가 붙는다."""
     src = source_video(proj, file)
-    tracks = audio_tracks(src)
-    if not tracks:
+    available = audio_tracks(src)
+    if not available:
         raise ValueError(f"{src.name}에 오디오 트랙이 없습니다")
-    if not 1 <= track <= len(tracks):
-        raise ValueError(f"트랙 {track}이(가) 없습니다 (1~{len(tracks)}번)")
+    tracks = list(tracks)
+    for n in tracks:
+        if not 1 <= n <= len(available):
+            raise ValueError(f"트랙 {n}이(가) 없습니다 (1~{len(available)}번)")
     st = src.stat()
-    key = hashlib.sha1(json.dumps([str(src), st.st_size, st.st_mtime_ns, track, model_size(), LANGUAGE]).encode()).hexdigest()[:12]
+    key = hashlib.sha1(json.dumps([str(src), st.st_size, st.st_mtime_ns, tracks, model_size(), LANGUAGE]).encode()).hexdigest()[:12]
     out = proj.cache / "transcript.json"
     if out.exists() and (old := json.loads(out.read_text(encoding="utf-8"))).get("key") == key:
         return old
@@ -115,15 +128,21 @@ def transcribe_project(proj: Project, file: str | None = None, track: int = 1, e
     (download or ensure_models)(models)
     proj.cache.mkdir(exist_ok=True)
     wav = proj.cache / "audio.wav"
+    labeled, segments = [], []
     try:
-        extract_wav(src, track, wav)
+        extract_wav(src, 1, wav)  # 길이·큰 소리 순간은 1번(전체 믹스) 기준
         duration, db = _wav_seconds(wav), loudness(wav)
-        segments = engine.transcribe(wav, LANGUAGE)
+        for k, n in enumerate(tracks, 1):
+            label = f"마이크{k}"
+            labeled.append({"track": n, "label": label, "title": available[n - 1]["title"]})
+            extract_wav(src, n, wav)
+            segments += [{"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text, "speaker": label}
+                         for s in engine.transcribe(wav, LANGUAGE)]
     finally:
         wav.unlink(missing_ok=True)
+    segments.sort(key=lambda s: s["start"])  # 안정 정렬: 같은 시각이면 트랙 순서
     data = {"key": key, "model": model_size(), "language": LANGUAGE, "source": src.relative_to(proj.sources).as_posix(),
-            "track": track, "duration": round(duration, 3),
-            "segments": [{"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text} for s in segments]}
+            "tracks": labeled, "duration": round(duration, 3), "segments": segments}
     _write(proj.cache / "loudness.json", {"key": key, "db": db})
     _write(out, data)
     return data

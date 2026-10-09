@@ -97,34 +97,34 @@ def test_failed_download_leaves_no_partial_file(tmp_path):
 
 def test_transcribe_project_writes_transcript_and_loudness(proj):
     eng = FakeEngine()
-    t = transcribe.transcribe_project(proj, track=2, engine_factory=lambda m: eng, download=lambda m: None)
-    assert t["source"] == "game.mkv" and t["track"] == 2 and 2.9 < t["duration"] < 3.1
-    assert t["segments"] == [{"start": 0.5, "end": 1.5, "text": "안녕"}]
-    saved = json.loads((proj.cache / "transcript.json").read_text(encoding="utf-8"))
-    assert saved == t
+    t = transcribe.transcribe_project(proj, tracks=[2], engine_factory=lambda m: eng, download=lambda m: None)
+    assert t["source"] == "game.mkv" and 2.9 < t["duration"] < 3.1
+    assert t["tracks"] == [{"track": 2, "label": "마이크1", "title": "Mic"}]
+    assert t["segments"] == [{"start": 0.5, "end": 1.5, "text": "안녕", "speaker": "마이크1"}]
+    assert json.loads((proj.cache / "transcript.json").read_text(encoding="utf-8")) == t
     db = json.loads((proj.cache / "loudness.json").read_text(encoding="utf-8"))["db"]
-    assert abs(len(db) - 3) <= 1 and min(db[:3]) > -30  # 2번 트랙(사인파) 음량, 끝 조각은 AAC 패딩으로 하나 더 생길 수 있음
+    assert abs(len(db) - 3) <= 1 and max(db) < -80  # 큰 소리 순간은 고른 2번(사인파)이 아니라 1번(전체 믹스, 여기선 무음) 기준
     assert not (proj.cache / "audio.wav").exists()
 
 
 def test_transcript_cache_invalidates_on_track_and_source_change(proj):
     eng = FakeEngine()
     run = lambda **kw: transcribe.transcribe_project(proj, engine_factory=lambda m: eng, download=lambda m: None, **kw)
-    run(track=1)
-    run(track=1)
+    run(tracks=[1])
+    run(tracks=[1])
     assert len(eng.calls) == 1  # 같은 원본·트랙은 캐시
-    run(track=2)
+    run(tracks=[2])
     assert len(eng.calls) == 2  # 트랙이 바뀌면 다시
     src = proj.sources / "game.mkv"
     two_track_video(src, 2)  # 같은 이름으로 다른 원본
     os.utime(src, ns=(1, 1))
-    run(track=2)
+    run(tracks=[2])
     assert len(eng.calls) == 3
 
 
 def test_track_out_of_range_and_no_audio(proj):
     with pytest.raises(ValueError, match="트랙 3"):
-        transcribe.transcribe_project(proj, track=3, engine_factory=lambda m: FakeEngine(), download=lambda m: None)
+        transcribe.transcribe_project(proj, tracks=[3], engine_factory=lambda m: FakeEngine(), download=lambda m: None)
     (proj.sources / "game.mkv").unlink()
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
            str(proj.sources / "silent.mp4"))
@@ -160,3 +160,28 @@ def test_network_error_names_the_url(tmp_path):
 
     with pytest.raises(RuntimeError, match="huggingface"):
         transcribe.ensure_models(tmp_path, urlopen=fail, say=lambda s: None)
+
+
+def test_multiple_tracks_are_labelled_in_order_and_merged_by_time(proj):
+    class PerTrack:
+        def __init__(self):
+            self.n = 0
+
+        def transcribe(self, wav, language="ko"):
+            self.n += 1
+            if self.n == 1:
+                return [Segment(2.0, 2.5, "둘째 트랙 말")]
+            return [Segment(0.5, 1.0, "첫 트랙 말"), Segment(2.2, 2.8, "겹침")]
+
+    t = transcribe.transcribe_project(proj, tracks=[2, 1], engine_factory=lambda m: PerTrack(), download=lambda m: None)
+    assert [(x["label"], x["track"]) for x in t["tracks"]] == [("마이크1", 2), ("마이크2", 1)]
+    assert [(s["text"], s["speaker"]) for s in t["segments"]] == [
+        ("첫 트랙 말", "마이크2"), ("둘째 트랙 말", "마이크1"), ("겹침", "마이크2")]
+
+
+def test_parse_tracks():
+    assert transcribe.parse_tracks("2, 3") == [2, 3]
+    assert transcribe.parse_tracks("1") == [1]
+    for bad in ("", "a", "2,2"):
+        with pytest.raises(ValueError, match="--track"):
+            transcribe.parse_tracks(bad)
