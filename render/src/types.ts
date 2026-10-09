@@ -16,3 +16,8 @@ export type Storyboard = {
   formats: Partial<Record<FormatId, FormatPlan>>;
   active?: FormatId;
 };
+
+export type Caption = {start: number; end: number; text: string};
+export type LongClip = {in: number; out: number; start: number; end: number; title: string};
+export type LongPlan = {width: number; height: number; duration: number; clips: LongClip[]; captions: Caption[]};
+export type LongStoryboard = {mode: 'longform'; fps: number; src: string; formats: {longform?: LongPlan}};
