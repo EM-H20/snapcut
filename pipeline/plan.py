@@ -15,7 +15,7 @@ FORMATS = {
     "youtube": {"width": 1920, "height": 1080, "photo_seconds": 2.0, "per_collage": 1},
 }
 KEN_BURNS = ["zoom-in", "pan-left", "zoom-out", "pan-right"]
-KEN_BURNS_ANY = KEN_BURNS + ["still"]  # still: 움직임 없이 멈춘 사진 (사진 피날레)
+KEN_BURNS_ANY = KEN_BURNS + ["still", "scroll-down"]  # still: 멈춘 사진 (사진 피날레), scroll-down: 세로로 긴 사진(4컷) 확대해 위→아래
 SECTION_NAMES = ("브릿지", "브레이크", "마지막후렴", "피날레")  # {"at": 이름} 마커로 쓰는 곡 구간
 FINALE_BARS = 8  # 피날레 = 마지막후렴 + 이 마디 수 (selection "finaleBars"로 덮어씀)
 
@@ -38,8 +38,8 @@ def place(items: list, beats: list[float], start: float, end: float, beats_per_p
         if i >= len(grid) - 1:
             return shots, len(items) - k
         if it["type"] != "video":  # photo 또는 collage
-            j = min(i + beats_per_photo, len(grid) - 1)
-            shots.append({**{k: v for k, v in it.items() if k != "solo"}, "start": grid[i], "end": grid[j],
+            j = min(i + it.get("photoBeats", beats_per_photo), len(grid) - 1)
+            shots.append({**{k: v for k, v in it.items() if k not in ("solo", "photoBeats")}, "start": grid[i], "end": grid[j],
                           "kenBurns": it.get("kenBurns") or KEN_BURNS[photo_no % len(KEN_BURNS)]})
             photo_no += 1
         else:
@@ -198,8 +198,11 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             kb = sel.get("kenBurns")
             if kb is not None and kb not in KEN_BURNS_ANY:
                 raise ValueError(f"items[{k}]: kenBurns는 {KEN_BURNS_ANY} 중 하나여야 합니다: {kb!r}")
-            items.append({"type": "photo", "src": c["file"], **({"solo": True} if sel.get("solo") else {}),
-                          **({"kenBurns": kb} if kb else {}), **fade})
+            pb = sel.get("photoBeats")  # 이 사진만 길게/짧게 (4컷 사진 등). 분할 화면으로 묶지 않는다
+            if pb is not None and (isinstance(pb, bool) or not isinstance(pb, int) or pb <= 0):
+                raise ValueError(f"items[{k}]: photoBeats는 양의 정수여야 합니다: {pb!r}")
+            items.append({"type": "photo", "src": c["file"], **({"solo": True} if sel.get("solo") or pb else {}),
+                          **({"photoBeats": pb} if pb else {}), **({"kenBurns": kb} if kb else {}), **fade})
             continue
         sug = highlights.get(c["file"], {}).get("suggested") or {"in": 0.0, "out": min(4.0, c["duration"]), "liveAudio": False}
         vin, vout = float(sel.get("in", sug["in"])), float(sel.get("out", sug["out"]))

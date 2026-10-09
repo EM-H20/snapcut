@@ -1,5 +1,5 @@
 export type FormatId = 'reels' | 'youtube';
-export type KenBurns = 'zoom-in' | 'pan-left' | 'zoom-out' | 'pan-right' | 'still';
+export type KenBurns = 'zoom-in' | 'pan-left' | 'zoom-out' | 'pan-right' | 'scroll-down' | 'still';
 export type PhotoShotT = {type: 'photo'; src: string; start: number; end: number; kenBurns: KenBurns; dissolve?: number; blur?: number};
 export type VideoShotT = {type: 'video'; src: string; start: number; end: number; in: number; out: number; liveAudio: boolean; rotate?: 90 | -90 | 180; dissolve?: number; duck?: false; blur?: number};
 export type CollageShotT = {type: 'collage'; srcs: string[]; start: number; end: number; kenBurns: KenBurns};

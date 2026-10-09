@@ -36,6 +36,16 @@ def test_place_video_snaps_length_to_beats_and_stays_in_clip():
     assert s["out"] <= 3.0                                  # 원본 길이 안
 
 
+def test_photo_beats_on_one_photo_overrides_pace():
+    # 4컷처럼 오래 보여 줄 사진 한 장만 길게: "photoBeats": 6
+    items = resolve_items({"items": [{"id": 0, "photoBeats": 6}, {"id": 0}]}, CANDS, HL)
+    shots, _ = place(items, BEATS, 3.0, 20.0, 2)
+    assert [(s["start"], s["end"]) for s in shots] == [(3.0, 6.0), (6.0, 7.0)]
+    assert "photoBeats" not in shots[0]
+    with pytest.raises(ValueError, match="photoBeats"):
+        resolve_items({"items": [{"id": 0, "photoBeats": 0}]}, CANDS, HL)
+
+
 def test_place_reports_leftover():
     shots, left = place([photo(i) for i in range(10)], BEATS, 3.0, 6.0, 2)
     assert len(shots) == 3 and left == 7
@@ -270,6 +280,8 @@ def test_photo_ken_burns_override_for_match_cut_into_video():
     shots, _ = place(items, BEATS, 3.0, 20.0, 2)
     assert shots[0]["kenBurns"] == "zoom-out"
     assert shots[1]["kenBurns"] == "pan-left"  # 지정 안 한 사진은 순서대로 돌아간다
+    tall = resolve_items({"items": [{"id": 0, "kenBurns": "scroll-down"}]}, CANDS, HL)  # 4컷 사진: 위→아래로 훑기
+    assert place(tall, BEATS, 3.0, 20.0, 2)[0][0]["kenBurns"] == "scroll-down"
     with pytest.raises(ValueError, match="kenBurns"):
         resolve_items({"items": [{"id": 0, "kenBurns": "spin"}]}, CANDS, HL)
 
