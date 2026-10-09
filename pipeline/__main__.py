@@ -7,7 +7,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, music, plan, render_src, template
+from . import contact, convert, curate, ff, highlights, intro, music, plan, render_src, template, transcribe
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -206,6 +206,26 @@ def cmd_render(args) -> None:
     render_src.clean(public)  # HDR·HEIC 변환본은 렌더가 끝나면 지운다
 
 
+def _mmss(sec: float) -> str:
+    m, s = divmod(int(sec), 60)
+    return f"{m // 60}:{m % 60:02d}:{s:02d}" if m >= 60 else f"{m}:{s:02d}"
+
+
+def cmd_transcribe(args) -> None:
+    proj = project(args.project)
+    src = transcribe.source_video(proj, args.file)
+    tracks = transcribe.audio_tracks(src)
+    print(f"원본: {src.relative_to(proj.sources).as_posix()}")
+    print("오디오 트랙: " + (", ".join(f"{t['track']}번({t['channels']}ch{' ' + t['title'] if t['title'] else ''})"
+                                    for t in tracks) or "없음"))
+    t = transcribe.transcribe_project(proj, args.file, args.track)
+    print(f"전사 완료 (트랙 {t['track']}, {t['model']}): {t['duration'] / 60:.1f}분, 문장 {len(t['segments'])}개")
+    if not t["segments"]:
+        print("주의: 인식된 말이 없습니다 — 목소리가 다른 트랙에 있으면 --track으로 다시 실행하세요")
+    db = json.loads((proj.cache / "loudness.json").read_text(encoding="utf-8"))["db"]
+    print("큰 소리 순간: " + ", ".join(_mmss(s) for s in transcribe.loud_moments(db)))
+
+
 def cmd_music(args) -> None:
     for m in list_music():
         print(m.name)
@@ -219,6 +239,10 @@ def main(argv=None) -> None:
     pr = sub.add_parser("prepare")
     pr.add_argument("project")
     pr.add_argument("--keep-blur", action="store_true", help="흔들린 사진도 후보로 남긴다")
+    tr = sub.add_parser("transcribe")
+    tr.add_argument("project")
+    tr.add_argument("--track", type=int, default=1, help="전사할 오디오 트랙 번호 (1부터, OBS 1번 = 전체 믹스)")
+    tr.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)
@@ -230,7 +254,7 @@ def main(argv=None) -> None:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
