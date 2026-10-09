@@ -202,3 +202,45 @@ def test_card_bg_missing_manifest_entry_is_korean_error(tmp_path):
     convert.convert_project(proj)
     with pytest.raises(ValueError, match="manifest"):
         cli._card_bg(proj, "reels", ("media/nope_mp4.mp4", 0.0))
+
+
+def _longform_project(tmp_path):
+    (tmp_path / "영상소스").mkdir()
+    (tmp_path / "영상소스" / "game.mkv").write_bytes(b"x")  # plan은 원본을 읽지 않는다
+    (tmp_path / ".cache").mkdir()
+    tr = {"key": "k", "source": "game.mkv", "track": 1, "duration": 60.0,
+          "segments": [{"start": 1.0, "end": 3.0, "text": "첫 문장"}]}
+    (tmp_path / ".cache" / "transcript.json").write_text(json.dumps(tr, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "longform.json").write_text(json.dumps({"clips": [{"in": 2.0, "out": 5.0}]}), encoding="utf-8")
+    return Project(tmp_path)
+
+
+def test_plan_longform_writes_storyboard_and_source_link(monkeypatch, tmp_path, capsys):
+    proj = _longform_project(tmp_path)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["plan", str(proj.root)])
+    sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))
+    assert sb["mode"] == "longform" and sb["src"] == "src/game.mkv"
+    assert (proj.cache / "src").is_symlink() and (proj.cache / "src" / "game.mkv").exists()
+    assert "자막 1개" in capsys.readouterr().out
+
+
+def test_plan_longform_needs_transcript(monkeypatch, tmp_path):
+    proj = _longform_project(tmp_path)
+    (proj.cache / "transcript.json").unlink()
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    with pytest.raises(SystemExit, match="transcribe"):
+        cli.main(["plan", str(proj.root)])
+
+
+def test_render_longform_uses_cache_as_public_dir_and_writes_srt(monkeypatch, tmp_path):
+    proj = _longform_project(tmp_path)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["plan", str(proj.root)])
+    calls = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    cli.main(["render", str(proj.root)])
+    assert calls[0][4:6] == ["longform", str(proj.output / f"{proj.root.name}_longform.mp4")]  # npx remotion render src/index.ts <comp> <out>
+    assert f"--public-dir={proj.cache}" in calls[0]
+    srt = (proj.output / f"{proj.root.name}_longform.srt").read_text(encoding="utf-8")
+    assert srt.startswith("1\n00:00:00,300 --> 00:00:02,300\n첫 문장")

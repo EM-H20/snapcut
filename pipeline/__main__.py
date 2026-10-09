@@ -7,10 +7,11 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, music, plan, render_src, template, transcribe
+from . import contact, convert, curate, ff, highlights, intro, longform, music, plan, render_src, template, transcribe
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
+LONGFORM_FILE = "longform.json"  # 있으면 롱폼 모드 (Claude가 고른 구간)
 MUSIC_DIR = SHARED / "음악"
 CREDITS_FONT = SHARED / "인트로아웃트로" / "handwritten" / "NanumPenScript-Regular.ttf"  # 크레딧 손글씨
 CARD_BG_SOURCE = "original-grade1"  # 카드 영상 배경을 원본에서 뽑는다 — 바꾸면 카드가 다시 만들어진다
@@ -132,8 +133,25 @@ def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tu
     return f"cards/{dst.name}"
 
 
+def cmd_plan_longform(proj: Project) -> None:
+    spec = longform.load_spec(proj.root / LONGFORM_FILE)
+    tf = proj.cache / "transcript.json"
+    if not tf.exists():
+        raise SystemExit(f"먼저 transcribe를 실행하세요: python -m pipeline transcribe {proj.root.name}")
+    tr = json.loads(tf.read_text(encoding="utf-8"))
+    render_src._link(proj.cache / "src", proj.sources)  # Studio·렌더 모두 .cache를 public dir로 쓰고 원본은 링크로 본다
+    sb, warnings = longform.build(spec, tr, "src/" + tr["source"])
+    proj.storyboard.write_text(json.dumps(sb, ensure_ascii=False, indent=2), encoding="utf-8")
+    for f, p in sb["formats"].items():
+        print(f"  {f}: {p['duration'] / 60:.1f}분, 구간 {len(p['clips'])}개, 자막 {len(p['captions'])}개")
+    for w in warnings:
+        print(f"  주의: {w}")
+
+
 def cmd_plan(args) -> None:
     proj = project(args.project)
+    if (proj.root / LONGFORM_FILE).exists():
+        return cmd_plan_longform(proj)
     if not proj.selection.exists():
         raise SystemExit(f"selection.json이 없습니다: {proj.selection}")
     sel = json.loads(proj.selection.read_text(encoding="utf-8"))
@@ -186,6 +204,17 @@ def cmd_studio(args) -> None:
     subprocess.run(["npx", "remotion", "studio", "src/index.ts", f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
 
 
+def _render_longform(proj: Project, sb: dict, formats: list[str]) -> None:
+    proj.output.mkdir(exist_ok=True)
+    for f in formats:
+        out = proj.output / f"{proj.root.name}_{f}.mp4"
+        r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
+        if r.returncode:
+            raise SystemExit(f"{f} 렌더 실패")
+        out.with_suffix(".srt").write_text(longform.srt(sb["formats"][f]["captions"]), encoding="utf-8")
+        print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
+
+
 def cmd_render(args) -> None:
     proj = project(args.project)
     if not proj.storyboard.exists():
@@ -195,6 +224,8 @@ def cmd_render(args) -> None:
     for f in formats:
         if f not in sb["formats"]:
             raise SystemExit(f"storyboard에 '{f}' 형식이 없습니다. selection.json의 formats에 넣고 plan을 다시 실행하세요.")
+    if sb.get("mode") == "longform":
+        return _render_longform(proj, sb, formats)
     public = render_src.build(proj, formats)  # 원본을 링크로 가리키는 렌더용 폴더 (Studio는 계속 .cache)
     proj.output.mkdir(exist_ok=True)
     for f in formats:
