@@ -1,4 +1,8 @@
-import type {Caption} from './types.ts';
+import type {Caption, Place} from './types.ts';
 
-export const activeCaption = (caps: Caption[], t: number): string | null =>
-  caps.find((c) => c.start <= t && t < c.end)?.text ?? null;
+// 지금 보이는 자막을 자리별로. 같은 자리에 여럿이면 순서대로 쌓는다. place가 없으면(예전 storyboard) 자막바
+export const activeByPlace = (caps: Caption[], t: number): Record<Place, Caption[]> => {
+  const out: Record<Place, Caption[]> = {bar: [], left: [], right: []};
+  for (const c of caps) if (c.start <= t && t < c.end) out[c.place ?? 'bar'].push(c);
+  return out;
+};

@@ -27,7 +27,7 @@ export const Longform: React.FC<LongStoryboard> = (sb) => {
   return (
     <AbsoluteFill style={{backgroundColor: 'black'}}>
       <ClipsTrack src={sb.src} clips={plan.clips} />
-      <CaptionLayer captions={plan.captions} size={plan.height / 18} bottom={plan.height * 0.07} />
+      <CaptionLayer captions={plan.captions} style={sb.captionStyle} vertical={false} />
     </AbsoluteFill>
   );
 };
@@ -42,7 +42,7 @@ export const Shorts: React.FC<LongStoryboard> = (sb) => {
         <MutedClips src={sb.src} clips={plan.clips} />
       </AbsoluteFill>
       <ClipsTrack src={sb.src} clips={plan.clips} />
-      <CaptionLayer captions={plan.captions} size={plan.width / 14} bottom={plan.height * 0.22} />
+      <CaptionLayer captions={plan.captions} style={sb.captionStyle} vertical />
     </AbsoluteFill>
   );
 };

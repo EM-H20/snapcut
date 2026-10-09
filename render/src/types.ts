@@ -17,8 +17,17 @@ export type Storyboard = {
   active?: FormatId;
 };
 
-export type Caption = {start: number; end: number; text: string};
+export type Place = 'bar' | 'left' | 'right';
+export type Caption = {start: number; end: number; text: string; name?: string; place?: Place};
+type Box = {background: string; color: string; border: string; radius: number};
+export type CaptionStyle = {
+  font: string;
+  bar: Box;
+  name: {background: string; color: string; radius: number; separator: boolean} | null;
+  bubble: Box;
+  icon: 'play' | null;
+};
 export type LongClip = {in: number; out: number; start: number; end: number; title: string};
 export type LongPlan = {width: number; height: number; duration: number; clips: LongClip[]; captions: Caption[]};
 export type ShortPlan = LongPlan & {title: string};
-export type LongStoryboard = {mode: 'longform'; fps: number; src: string; formats: {longform?: LongPlan; shorts?: ShortPlan[]}; clip?: number};
+export type LongStoryboard = {mode: 'longform'; fps: number; src: string; formats: {longform?: LongPlan; shorts?: ShortPlan[]}; clip?: number; captionStyle?: CaptionStyle};
