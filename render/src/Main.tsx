@@ -17,7 +17,7 @@ export const Main: React.FC<Storyboard> = (props) => {
   if (!plan) return null;
   const total = durationInFrames / fps;
   return (
-    <AbsoluteFill style={{backgroundColor: 'black'}} from={141}>
+    <AbsoluteFill style={{backgroundColor: 'black'}}>
       <Html5Audio
         src={staticFile(props.music)}
         trimBefore={Math.round(plan.musicStart * fps)}
