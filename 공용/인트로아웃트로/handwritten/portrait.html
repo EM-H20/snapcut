@@ -2,7 +2,8 @@
 <html data-composition-variables='[
   {"id":"text","type":"string","label":"Text","default":"동심지키미 in 가평"},
   {"id":"sub","type":"string","label":"Sub","default":""},
-  {"id":"layout","type":"string","label":"Layout","default":"wide"}
+  {"id":"layout","type":"string","label":"Layout","default":"wide"},
+  {"id":"exit","type":"string","label":"Exit (outro: text fades out before the picture)","default":""}
 ]'>
 <head>
 <meta charset="utf-8">
@@ -20,21 +21,36 @@
 </style>
 </head>
 <body>
-<div id="stage" data-composition-id="card" data-start="0" data-duration="3" data-width="1080" data-height="1920">
-  <video id="bg" class="clip" src="bg.mp4" muted playsinline data-start="0" data-duration="3" data-track-index="0"></video>
-  <div id="words" class="clip" data-start="0" data-duration="3" data-track-index="1"></div>
-  <div id="sub" class="clip" data-start="0" data-duration="3" data-track-index="2"></div>
+<div id="stage" data-composition-id="card" data-start="0" data-duration="11" data-width="1080" data-height="1920">
+  <video id="bg" class="clip" src="bg.mp4" muted playsinline data-start="0" data-duration="11" data-track-index="0"></video>
+  <div id="words" class="clip" data-start="0" data-duration="11" data-track-index="1"></div>
+  <div id="sub" class="clip" data-start="0" data-duration="11" data-track-index="2"></div>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   <script>
     // 단어를 왼쪽 위 → 오른쪽 아래 대각선으로 흩어 놓는다 ("동심지키미 / in / 가평")
     const LEFT_W = [8, 48], TOP_W = [34, 60];
     // center: 사진 배경(양옆·위아래 검은 띠)일 때 글씨를 사진 안쪽 가운데로 모은다
     const LEFT_C = [10, 50], TOP_C = [37, 61];
-    const { text, sub, layout } = window.__hyperframes.getVariables();
-    const [LEFT, TOP] = layout === "center" ? [LEFT_C, TOP_C] : [LEFT_W, TOP_W];
+    const { text, sub, layout, exit } = window.__hyperframes.getVariables();
+    // top: 사람이 화면을 채운 사진(단체 사진·그림)일 때 글씨를 위쪽 하늘·나무에 둔다
+    const LEFT_T = [8, 40], TOP_T = [6, 12];
+    // low: 화면 아래쪽 아래쪽(화면 80% 지점)에 한 줄로
+    const LEFT_L = [8, 40], TOP_L = [80, 80];
+    const [LEFT, TOP] = layout === "center" ? [LEFT_C, TOP_C] : layout === "top" ? [LEFT_T, TOP_T] : layout === "low" ? [LEFT_L, TOP_L] : [LEFT_W, TOP_W];
     const words = text.split(/\s+/).filter(Boolean);
     const box = document.getElementById("words");
-    words.forEach((w, k) => {
+    if (layout === "low") {  // 한 줄 가운데 정렬 (단어 사이 간격은 글자 크기에 비례)
+      const row = document.createElement("div");
+      row.style.cssText = "position:absolute;left:0;right:0;top:80%;display:flex;justify-content:center;gap:0.35em;font-size:130px;";
+      words.forEach((w) => {
+        const el = document.createElement("div");
+        el.className = "word";
+        el.style.position = "static";
+        el.textContent = w;
+        row.appendChild(el);
+      });
+      box.appendChild(row);
+    } else words.forEach((w, k) => {
       const t = words.length > 1 ? k / (words.length - 1) : 0;
       const el = document.createElement("div");
       el.className = "word";
@@ -47,6 +63,8 @@
     const tl = gsap.timeline({ paused: true });
     tl.fromTo(".word", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.45, ease: "power2.out" }, 0.3)
       .fromTo("#sub", { opacity: 0 }, { opacity: 0.9, duration: 0.5 }, 1.4);
+    // 아웃트로: 글씨가 먼저 사라지고, 그다음 화면이 어두워진다 (화면 페이드는 Remotion ClipShot fadeOut 2초 = 9초부터)
+    if (exit) tl.to([".word", "#sub"], { opacity: 0, duration: 0.8 }, 8.0);
     window.__timelines.card = tl;
   </script>
 </div>

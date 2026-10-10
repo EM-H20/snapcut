@@ -1,9 +1,9 @@
 export type FormatId = 'reels' | 'youtube';
 export type KenBurns = 'zoom-in' | 'pan-left' | 'zoom-out' | 'pan-right' | 'scroll-down' | 'still';
 export type PhotoShotT = {type: 'photo'; src: string; start: number; end: number; kenBurns: KenBurns; dissolve?: number; blur?: number};
-export type VideoShotT = {type: 'video'; src: string; start: number; end: number; in: number; out: number; liveAudio: boolean; rotate?: 90 | -90 | 180; dissolve?: number; duck?: false; blur?: number};
+export type VideoShotT = {type: 'video'; src: string; start: number; end: number; in: number; out: number; liveAudio: boolean; rotate?: 90 | -90 | 180; dissolve?: number; duck?: false | number; duckFade?: number; blur?: number; fadeOut?: number};
 export type CollageShotT = {type: 'collage'; srcs: string[]; start: number; end: number; kenBurns: KenBurns};
-export type ClipShotT = {type: 'clip'; src: string; start: number; end: number; fadeOut?: number};
+export type ClipShotT = {type: 'clip'; src: string; start: number; end: number; fadeOut?: number; dissolve?: number};
 export type CreditsShotT = {type: 'credits'; src: string; in: number; out: number; lines: string[]; start: number; end: number; liveAudio: boolean};
 export type Shot = PhotoShotT | CollageShotT | VideoShotT | ClipShotT | CreditsShotT;
 export type FormatPlan = {width: number; height: number; musicStart: number; musicEnd: number; musicFadeEnd?: number; shots: Shot[]; dropped: number};

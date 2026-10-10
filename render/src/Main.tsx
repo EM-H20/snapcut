@@ -17,7 +17,7 @@ export const Main: React.FC<Storyboard> = (props) => {
   if (!plan) return null;
   const total = durationInFrames / fps;
   return (
-    <AbsoluteFill style={{backgroundColor: 'black'}}>
+    <AbsoluteFill style={{backgroundColor: 'black'}} from={141}>
       <Html5Audio
         src={staticFile(props.music)}
         trimBefore={Math.round(plan.musicStart * fps)}
@@ -34,7 +34,7 @@ export const Main: React.FC<Storyboard> = (props) => {
               ) : shot.type === 'collage' ? (
                 <CollageShot shot={shot} frames={frames} />
               ) : shot.type === 'video' ? (
-                <VideoShot shot={shot} />
+                <VideoShot shot={shot} frames={frames} />
               ) : shot.type === 'credits' ? (
                 <CreditsShot shot={shot} font={props.font} />
               ) : (

@@ -1,6 +1,6 @@
 import pytest
 
-from pipeline.plan import (FORMATS, INTRO_SECONDS, MAX_PER_COLLAGE, OUTRO_SECONDS, build_format, build_storyboard,
+from pipeline.plan import (CARD_SECONDS, OUTRO_DISSOLVE, OUTRO_FADE, group_photos, FORMATS, INTRO_SECONDS, MAX_PER_COLLAGE, OUTRO_SECONDS, build_format, build_storyboard,
                            card_video, fit, place, resolve_items, subsample)
 
 BEATS = [round(i * 0.5, 3) for i in range(0, 241)]  # 120 BPM, 120초
@@ -111,7 +111,7 @@ def test_reels_uses_chorus_window():
 
 def test_too_few_items_ends_music_early():
     plan = build_format("youtube", [photo(0), photo(1)], MUSIC, CARDS)
-    assert plan["musicEnd"] - plan["musicStart"] < 20.0
+    assert plan["musicEnd"] - plan["musicStart"] < INTRO_SECONDS + OUTRO_SECONDS + 6.0  # 곡 끝(120초)까지 끌지 않음
     assert plan["dropped"] == 0
 
 
@@ -120,9 +120,9 @@ def test_no_beats_raises_clear_error():
         build_format("youtube", [photo(0)], dict(MUSIC, beats=[]), CARDS)
 
 
-def test_ken_burns_alternates():
+def test_photos_are_still_by_default():
     plan = build_format("youtube", [photo(i) for i in range(4)], MUSIC, CARDS)
-    assert [s["kenBurns"] for s in plan["shots"][1:-1]] == ["zoom-in", "pan-left", "zoom-out", "pan-right"]
+    assert [s["kenBurns"] for s in plan["shots"][1:-1]] == ["still"] * 4
 
 
 CANDS = [
@@ -161,9 +161,10 @@ def test_build_storyboard_shape():
 
 
 def test_late_first_beat_leaves_no_gap_after_intro():
-    late = dict(MUSIC, beats=[4.0 + 0.5 * i for i in range(200)], downbeats=[])
+    first = INTRO_SECONDS + 1.0  # 첫 비트가 인트로 길이보다 늦음
+    late = dict(MUSIC, beats=[first + 0.5 * i for i in range(200)], downbeats=[])
     shots = build_format("youtube", [photo(i) for i in range(5)], late, CARDS)["shots"]
-    assert shots[0]["end"] == shots[1]["start"] == 4.0
+    assert shots[0]["end"] == shots[1]["start"] == first
     for a, b in zip(shots, shots[1:]):
         assert a["end"] == pytest.approx(b["start"])
 
@@ -188,13 +189,14 @@ def test_build_storyboard_rejects_malformed_formats(formats):
 
 
 def test_card_video_optional_and_validated():
-    assert card_video({}, "introVideo", CANDS) is None
-    assert card_video({"introVideo": {"id": 1, "in": 2.0}}, "introVideo", CANDS) == ("media/v.mp4", 2.0)
-    assert card_video({"outroVideo": {"id": 0}}, "outroVideo", CANDS) == ("media/a.jpg", 0.0)  # 사진 배경도 가능
+    cands = [CANDS[0], dict(CANDS[1], duration=CARD_SECONDS + 4.0)]
+    assert card_video({}, "introVideo", cands) is None
+    assert card_video({"introVideo": {"id": 1, "in": 2.0}}, "introVideo", cands) == ("media/v.mp4", 2.0)
+    assert card_video({"outroVideo": {"id": 0}}, "outroVideo", cands) == ("media/a.jpg", 0.0)  # 사진 배경도 가능
     with pytest.raises(ValueError, match="introVideo"):
-        card_video({"introVideo": {"id": 99}}, "introVideo", CANDS)  # 없는 번호
+        card_video({"introVideo": {"id": 99}}, "introVideo", cands)  # 없는 번호
     with pytest.raises(ValueError, match="outroVideo"):
-        card_video({"outroVideo": {"id": 1, "in": 8.0}}, "outroVideo", CANDS)  # 3초가 영상 밖
+        card_video({"outroVideo": {"id": 1, "in": 8.0}}, "outroVideo", cands)  # 카드 길이가 영상 밖
 
 
 def test_photo_length_is_seconds_not_beats_so_fast_songs_dont_rush():
@@ -279,7 +281,7 @@ def test_photo_ken_burns_override_for_match_cut_into_video():
     items = resolve_items({"items": [{"id": 0, "kenBurns": "zoom-out"}, {"id": 0}]}, CANDS, HL)
     shots, _ = place(items, BEATS, 3.0, 20.0, 2)
     assert shots[0]["kenBurns"] == "zoom-out"
-    assert shots[1]["kenBurns"] == "pan-left"  # 지정 안 한 사진은 순서대로 돌아간다
+    assert shots[1]["kenBurns"] == "still"  # 지정 안 한 사진은 순서대로 돌아간다
     tall = resolve_items({"items": [{"id": 0, "kenBurns": "scroll-down"}]}, CANDS, HL)  # 4컷 사진: 위→아래로 훑기
     assert place(tall, BEATS, 3.0, 20.0, 2)[0][0]["kenBurns"] == "scroll-down"
     with pytest.raises(ValueError, match="kenBurns"):
@@ -320,7 +322,7 @@ def test_video_squeezed_to_under_half_at_segment_end_counts_as_not_fitting():
 def test_still_photo_has_no_ken_burns_motion():
     items = resolve_items({"items": [{"id": 0, "kenBurns": "still"}, {"id": 0}]}, CANDS, HL)
     shots, _ = place(items, BEATS, 3.0, 20.0, 2)
-    assert shots[0]["kenBurns"] == "still" and shots[1]["kenBurns"] in ("zoom-in", "pan-left", "zoom-out", "pan-right")
+    assert shots[0]["kenBurns"] == "still" and shots[1]["kenBurns"] == "still"
 
 
 def test_mark_photo_seconds_sets_pace_for_its_segment_only():
@@ -373,16 +375,25 @@ def test_selection_level_live_audio_default():
 
 def test_outro_card_fades_to_black_at_its_end():
     shots = build_format("youtube", [photo(i) for i in range(5)], MUSIC, CARDS)["shots"]
-    assert shots[-1]["type"] == "clip" and shots[-1]["fadeOut"] == 1.0
+    assert shots[-1]["type"] == "clip" and shots[-1]["fadeOut"] == OUTRO_FADE
     assert "fadeOut" not in shots[0]   # 인트로는 페이드아웃 없음
+    assert "dissolve" not in shots[-1]  # 마지막 영상이 검게 사라질 때만 카드가 검은 화면에서 떠오른다
+
+
+def test_video_fade_out_makes_outro_rise_from_black():
+    items = resolve_items({"items": [{"id": 0}, {"id": 1, "in": 1.0, "out": 3.0, "fadeOut": 1.2}]}, CANDS, HL)
+    shots = build_format("youtube", items, MUSIC, CARDS)["shots"]
+    assert shots[-2]["fadeOut"] == 1.2 and shots[-1]["dissolve"] == OUTRO_DISSOLVE
+    with pytest.raises(ValueError, match="fadeOut"):
+        resolve_items({"items": [{"id": 1, "fadeOut": 5}]}, CANDS, HL)
 
 
 def test_beatless_song_tail_still_holds_shots():
     # 곡 끝 페이드 구간엔 비트가 안 잡힌다 — 마지막 비트 간격으로 격자를 이어서 그 시간도 쓴다
-    tail = dict(MUSIC, beats=[b for b in BEATS if b <= 50.0], duration=60.0)
+    tail = dict(MUSIC, beats=[b for b in BEATS if b <= 60.0 - OUTRO_SECONDS - 7.0], duration=60.0)
     shots = build_format("youtube", [photo(i) for i in range(40)], tail, CARDS)["shots"]
     content_end = shots[-1]["start"]          # 아웃트로 시작 = 본편 끝
-    assert content_end > 55.0                 # 50초에서 멈추지 않고 꼬리(…57초)까지 채움
+    assert content_end > 60.0 - OUTRO_SECONDS - 5.0  # 마지막 비트에서 멈추지 않고 꼬리까지 채움
     assert content_end <= 60.0 - OUTRO_SECONDS + 1e-6
 
 
@@ -456,3 +467,52 @@ def test_selection_sections_override_estimates_and_moves_finale():
     assert "피날레" in plain["estimated"]                                   # 추정 후렴에서 나온 피날레도 추정
     with pytest.raises(ValueError, match="sections"):
         build_storyboard(dict(sel, sections={"간주": 10.0}), CANDS, HL, est, "m", {"youtube": CARDS})
+
+
+def test_group_photos_splits_runs_and_breaks_on_other_items():
+    pic = lambda n, **kw: {"type": "photo", "src": f"p{n}.jpg", "portrait": True, **kw}
+    wide = {"type": "photo", "src": "w.jpg"}  # 가로 사진은 혼자 크게
+    out = group_photos([pic(0), pic(1), pic(2), pic(3), pic(4, kenBurns="still"), video(), pic(5), pic(6), pic(7, solo=True),
+                        pic(8), wide, pic(9)], 3)
+    assert [len(it.get("srcs", [0])) for it in out] == [2, 2, 1, 1, 2, 1, 1, 1, 1]  # 4장 → 2+2, still·영상·solo·가로에서 끊김
+    assert out[0]["type"] == "collage" and out[0]["span"] == 2
+
+
+def test_photo_group_gives_collage_two_photo_slots():
+    tall = [dict(photo(i), portrait=True) for i in range(3)]
+    plan = build_format("youtube", tall, MUSIC, CARDS, photo_group=3)
+    shot = plan["shots"][1]
+    assert shot["type"] == "collage" and len(shot["srcs"]) == 3 and "span" not in shot and "portrait" not in shot
+    solo = build_format("youtube", [photo(0), photo(1), photo(2)], MUSIC, CARDS)["shots"][1]
+    assert shot["end"] - shot["start"] == pytest.approx(2 * (solo["end"] - solo["start"]))
+
+
+def test_duck_level_is_passed_through_and_validated():
+    items = resolve_items({"items": [{"id": 1, "duck": 0.6}, {"id": 1}, {"id": 1, "duck": False}], "duck": True}, CANDS, HL)
+    assert items[0]["duck"] == 0.6 and "duck" not in items[1] and items[2]["duck"] is False
+    for bad in (0, 1, 1.5, -0.2, "x"):
+        with pytest.raises(ValueError, match="duck"):
+            resolve_items({"items": [{"id": 1, "duck": bad}]}, CANDS, HL)
+
+
+def test_duck_fade_is_passed_through_and_validated():
+    items = resolve_items({"items": [{"id": 1, "duckFade": 2.0}, {"id": 1}]}, CANDS, HL)
+    assert items[0]["duckFade"] == 2.0 and "duckFade" not in items[1]
+    for bad in (0, 0.05, 5, True, "x"):
+        with pytest.raises(ValueError, match="duckFade"):
+            resolve_items({"items": [{"id": 1, "duckFade": bad}]}, CANDS, HL)
+
+
+def test_explicit_ids_make_one_split_screen_and_are_validated():
+    cands = [{"type": "photo", "file": f"media/{n}.jpg"} for n in "abc"] + [CANDS[1]]
+    items = resolve_items({"items": [{"ids": [2, 0], "kenBurns": "still"}]}, cands, HL)
+    assert items == [{"type": "collage", "srcs": ["media/c.jpg", "media/a.jpg"], "span": 2, "kenBurns": "still"}]
+    for bad in ([0], [0, 1, 2, 0], [0, 3], [0, 9], "ab"):
+        with pytest.raises(ValueError, match="ids"):
+            resolve_items({"items": [{"ids": bad}]}, cands, HL)
+
+
+def test_outro_dissolve_crossfades_last_scene_into_card():
+    shots = build_format("youtube", [photo(i) for i in range(4)], MUSIC, CARDS, outro_dissolve=1.5)["shots"]
+    assert shots[-1]["dissolve"] == 1.5
+    assert "dissolve" not in build_format("youtube", [photo(i) for i in range(4)], MUSIC, CARDS)["shots"][-1]

@@ -2,11 +2,12 @@
 import statistics
 
 FPS = 30
-INTRO_SECONDS = 3.0
-OUTRO_SECONDS = 3.0
+INTRO_SECONDS = 8.0
+OUTRO_SECONDS = 11.0  # 아웃트로: 글씨 → 8초에 글씨가 사라짐 → 9초부터 화면이 어두워짐
 MIN_INTRO_SECONDS = 1.5
-CARD_SECONDS = 3.0  # 인트로/아웃트로 카드 mp4 길이 (render/src/ClipShot.tsx와 같아야 함)
-OUTRO_FADE = 1.0    # 아웃트로 카드 끝에서 검은 화면으로 페이드아웃하는 초
+CARD_SECONDS = 11.0  # 인트로/아웃트로 카드 mp4 길이 (render/src/ClipShot.tsx와 같아야 함)
+OUTRO_DISSOLVE = 0.8  # 마지막 영상이 fadeOut이면 아웃트로 카드가 검은 화면에서 떠오르는 초
+OUTRO_FADE = 2.0    # 아웃트로 카드 끝에서 검은 화면으로 페이드아웃하는 초
 MAX_PER_COLLAGE = 2  # 자리가 모자랄 때 한 화면에 묶는 사진 수 상한 (3·4분할은 보기 답답함)
 FORMATS = {
     # photo_seconds: 사진 한 장면 목표 길이. 비트 수로 고정하면 빠른 곡(172 BPM 등)에서 컷이 너무 빨라진다
@@ -14,8 +15,8 @@ FORMATS = {
     "reels": {"width": 1080, "height": 1920, "photo_seconds": 1.0, "per_collage": 1},
     "youtube": {"width": 1920, "height": 1080, "photo_seconds": 2.0, "per_collage": 1},
 }
-KEN_BURNS = ["zoom-in", "pan-left", "zoom-out", "pan-right"]
-KEN_BURNS_ANY = KEN_BURNS + ["still", "scroll-down"]  # still: 멈춘 사진 (사진 피날레), scroll-down: 세로로 긴 사진(4컷) 확대해 위→아래
+DEFAULT_KEN_BURNS = "still"  # 기본은 멈춘 사진. 확대·이동은 어지럽다는 반응이라 지정한 사진만 움직인다
+KEN_BURNS_ANY = ["zoom-in", "zoom-out", "pan-left", "pan-right", "still", "scroll-down"]  # still: 멈춘 사진 (사진 피날레), scroll-down: 세로로 긴 사진(4컷) 확대해 위→아래
 SECTION_NAMES = ("브릿지", "브레이크", "마지막후렴", "피날레")  # {"at": 이름} 마커로 쓰는 곡 구간
 FINALE_BARS = 8  # 피날레 = 마지막후렴 + 이 마디 수 (selection "finaleBars"로 덮어씀)
 
@@ -33,15 +34,14 @@ def subsample(items: list, n: int) -> list:
 def place(items: list, beats: list[float], start: float, end: float, beats_per_photo: int) -> tuple[list[dict], int]:
     grid = [b for b in beats if start - 1e-6 <= b <= end + 1e-6]
     interval = statistics.median([b - a for a, b in zip(grid, grid[1:])]) if len(grid) > 1 else 0.5
-    shots, i, photo_no = [], 0, 0
+    shots, i = [], 0
     for k, it in enumerate(items):
         if i >= len(grid) - 1:
             return shots, len(items) - k
         if it["type"] != "video":  # photo 또는 collage
-            j = min(i + it.get("photoBeats", beats_per_photo), len(grid) - 1)
-            shots.append({**{k: v for k, v in it.items() if k not in ("solo", "photoBeats")}, "start": grid[i], "end": grid[j],
-                          "kenBurns": it.get("kenBurns") or KEN_BURNS[photo_no % len(KEN_BURNS)]})
-            photo_no += 1
+            j = min(i + it.get("photoBeats", beats_per_photo * it.get("span", 1)), len(grid) - 1)
+            shots.append({**{k: v for k, v in it.items() if k not in ("solo", "photoBeats", "span", "portrait")}, "start": grid[i], "end": grid[j],
+                          "kenBurns": it.get("kenBurns") or DEFAULT_KEN_BURNS})
         else:
             n = max(1, round((it["out"] - it["in"]) / interval))
             if k > 0 and 2 * (len(grid) - 1 - i) < n:  # 남은 자리가 절반도 안 되면 잘라 넣지 않는다 (0.3초 번쩍 방지)
@@ -53,7 +53,7 @@ def place(items: list, beats: list[float], start: float, end: float, beats_per_p
             vin = min(it["in"], max(0.0, it["duration"] - length))
             shots.append({"type": "video", "src": it["src"], "start": grid[i], "end": grid[j],
                           "in": round(vin, 3), "out": round(vin + length, 3), "liveAudio": it["liveAudio"],
-                          **{key: it[key] for key in ("rotate", "dissolve", "duck", "blur") if key in it}})
+                          **{key: it[key] for key in ("rotate", "dissolve", "duck", "duckFade", "blur", "fadeOut") if key in it}})
         i = j
     return shots, 0
 
@@ -79,6 +79,32 @@ def pack(items: list, groups: int, per_collage: int = MAX_PER_COLLAGE) -> list:
         else:
             out.append(it)
         n += it["type"] == "photo"
+    return out
+
+
+def group_photos(items: list, size: int) -> list:
+    """이웃한 세로 사진을 2~size장씩 한 화면(collage)에 나란히 묶는다 (16:9에서 세로 사진 한 장은 양옆이 텅 빈다).
+    가로 사진은 혼자 크게 보이는 게 낫다 — 묶지 않는다. 영상·마커·세로 사진·solo·kenBurns/photoBeats를 지정한 사진(피날레 등)에서 끊긴다.
+    한 화면은 사진 두 장 몫(span 2)의 시간을 쓴다 — 장면이 줄어도 곡 길이를 채운다."""
+    out, run = [], []
+
+    def flush():
+        n_groups = -(-len(run) // size)
+        k = 0
+        for g in range(n_groups):
+            cnt = len(run) // n_groups + (g < len(run) % n_groups)
+            part = run[k:k + cnt]
+            k += cnt
+            out.append(part[0] if cnt == 1 else {"type": "collage", "srcs": [x["src"] for x in part], "span": 2})
+        run.clear()
+
+    for it in items:
+        if it["type"] == "photo" and it.get("portrait") and not (it.get("solo") or it.get("kenBurns")):
+            run.append(it)
+        else:
+            flush()
+            out.append(it)
+    flush()
     return out
 
 
@@ -181,6 +207,18 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             items.append({"type": "mark", "at": at if isinstance(at, str) else float(at),
                           **({"photoSeconds": float(ps)} if ps else {}), **({"photoBeats": pb} if pb else {})})
             continue
+        if "ids" in sel:  # 지정한 사진들을 한 분할 화면에 (순서대로 왼쪽→오른쪽). 피날레처럼 자동 묶기를 안 쓰는 곳에서 쓴다
+            ids = sel["ids"]
+            if not (isinstance(ids, list) and 2 <= len(ids) <= 3 and all(isinstance(i, int) and 0 <= i < len(candidates) and
+                                                                        candidates[i]["type"] == "photo" for i in ids)):
+                raise ValueError(f'items[{k}]: ids는 사진 후보 번호 2~3개여야 합니다 (예: {{"ids": [96, 98]}}): {ids!r}')
+            kb = sel.get("kenBurns")
+            if kb is not None and kb not in KEN_BURNS_ANY:
+                raise ValueError(f"items[{k}]: kenBurns는 {KEN_BURNS_ANY} 중 하나여야 합니다: {kb!r}")
+            items.append({"type": "collage", "srcs": [candidates[i]["file"] for i in ids], "span": 2,
+                          **({"photoBeats": sel["photoBeats"]} if isinstance(sel.get("photoBeats"), int) and sel["photoBeats"] > 0 else {}),
+                          **({"kenBurns": kb} if kb else {})})
+            continue
         cid = sel.get("id")
         if not (isinstance(cid, int) and 0 <= cid < len(candidates)):
             raise ValueError(f"items[{k}]: 후보 번호 {cid!r}가 없습니다 (0~{len(candidates) - 1})")
@@ -201,7 +239,8 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             pb = sel.get("photoBeats")  # 이 사진만 길게/짧게 (4컷 사진 등). 분할 화면으로 묶지 않는다
             if pb is not None and (isinstance(pb, bool) or not isinstance(pb, int) or pb <= 0):
                 raise ValueError(f"items[{k}]: photoBeats는 양의 정수여야 합니다: {pb!r}")
-            items.append({"type": "photo", "src": c["file"], **({"solo": True} if sel.get("solo") or pb else {}),
+            items.append({"type": "photo", "src": c["file"], **({"portrait": True} if c.get("height", 0) > c.get("width", 0) else {}),
+                          **({"solo": True} if sel.get("solo") or pb else {}),
                           **({"photoBeats": pb} if pb else {}), **({"kenBurns": kb} if kb else {}), **fade})
             continue
         sug = highlights.get(c["file"], {}).get("suggested") or {"in": 0.0, "out": min(4.0, c["duration"]), "liveAudio": False}
@@ -210,19 +249,29 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             raise ValueError(f"items[{k}]: 구간 {vin}~{vout}초가 영상 길이 {c['duration']}초를 벗어납니다")
         live = bool(sel.get("liveAudio", selection.get("liveAudio", sug["liveAudio"]))) and bool(c.get("has_audio"))
         duck = sel.get("duck", selection.get("duck", True))  # 최상위 "duck": false = 모든 영상에서 음악을 줄이지 않음
-        if not isinstance(duck, bool):
-            raise ValueError(f"items[{k}]: duck은 true/false여야 합니다 (false면 현장 소리 구간에도 음악을 줄이지 않음): {duck!r}")
+        if not (isinstance(duck, bool) or (isinstance(duck, (int, float)) and 0 < duck < 1)):
+            raise ValueError(f"items[{k}]: duck은 true/false나 0~1 사이 음악 볼륨이어야 합니다 (false면 현장 소리 구간에도 음악을 줄이지 않음, 0.6이면 60%로만 줄임): {duck!r}")
+        df = sel.get("duckFade")
+        if df is not None and (isinstance(df, bool) or not isinstance(df, (int, float)) or not 0.1 <= df <= 4.0):
+            raise ValueError(f"items[{k}]: duckFade는 0.1~4초여야 합니다 (현장 소리 앞뒤로 음악이 서서히 줄었다 커지는 길이): {df!r}")
+        if df:
+            fade["duckFade"] = float(df)
+        fo = sel.get("fadeOut")
+        if fo is not None and (isinstance(fo, bool) or not isinstance(fo, (int, float)) or not 0 < fo <= 3.0):
+            raise ValueError(f"items[{k}]: fadeOut은 0~3초여야 합니다 (영상 끝에서 검은 화면으로 서서히 어두워지는 길이): {fo!r}")
+        if fo:
+            fade["fadeOut"] = float(fo)
         rot = sel.get("rotate")
         if rot is not None and rot not in (90, -90, 180):
             raise ValueError(f"items[{k}]: rotate는 90, -90, 180 중 하나여야 합니다 (옆으로 찍힌 영상 바로 세우기): {rot!r}")
         items.append({"type": "video", "src": c["file"], "in": vin, "out": vout,
                       "duration": c["duration"], "liveAudio": live, **({"rotate": rot} if rot else {}), **fade,
-                      **({} if duck else {"duck": False})})
+                      **({} if duck is True else {"duck": float(duck)} if duck and duck is not True else {"duck": False})})
     return items
 
 
 def build_format(fmt: str, items: list[dict], music: dict, cards: dict, photo_seconds: float | None = None,
-                 credits: dict | None = None) -> dict:
+                 credits: dict | None = None, photo_group: int = 0, outro_dissolve: float = 0.0) -> dict:
     spec = FORMATS[fmt]
     m_start, m_end = (music["chorus"] if fmt == "reels" else (0.0, music["duration"]))
     beats = [round(b - m_start, 3) for b in music["beats"] if m_start <= b <= m_end]
@@ -233,17 +282,22 @@ def build_format(fmt: str, items: list[dict], music: dict, cards: dict, photo_se
         intro_end = next((b for b in beats if b >= MIN_INTRO_SECONDS), INTRO_SECONDS)
     interval = statistics.median([b - a for a, b in zip(beats, beats[1:])])
     usable = [it for it in items if it["type"] != "video" or it["duration"] >= interval]  # 한 비트보다 짧은 영상은 제외
+    short = len(items) - len(usable)
     beats_per_photo = max(1, round((photo_seconds or spec["photo_seconds"]) / interval))
     usable = [dict(it, at=round(it["at"] - m_start, 3)) if it["type"] == "mark" else it for it in usable]
+    if fmt == "youtube" and photo_group >= 2:
+        usable = group_photos(usable, photo_group)
     shots, dropped = place_segments(usable, beats, intro_end, (m_end - m_start) - OUTRO_SECONDS, beats_per_photo,
                                     spec["per_collage"])
-    dropped += len(items) - len(usable)
+    dropped += short
     if not shots:
         raise ValueError(f"{fmt}: 넣을 수 있는 장면이 없습니다 — 곡이 너무 짧거나 고른 항목이 없습니다")
     content_end = shots[-1]["end"]
     total = round(content_end + OUTRO_SECONDS, 3)  # 사진이 모자라면 음악을 여기서 끝냄
-    timeline = ([{"type": "clip", "src": cards["intro"], "start": 0.0, "end": intro_end}] + shots +
-                [{"type": "clip", "src": cards["outro"], "start": content_end, "end": total, "fadeOut": OUTRO_FADE}])
+    outro = {"type": "clip", "src": cards["outro"], "start": content_end, "end": total, "fadeOut": OUTRO_FADE,
+             **({"dissolve": outro_dissolve} if outro_dissolve else {"dissolve": OUTRO_DISSOLVE} if shots[-1].get("fadeOut") else {})}
+    # 마지막 영상이 검게 사라지면 카드도 검은 화면에서 떠오른다. outroDissolve면 마지막 장면(사진)이 카드로 서서히 바뀐다
+    timeline = [{"type": "clip", "src": cards["intro"], "start": 0.0, "end": intro_end}] + shots + [outro]
     fade_end = total  # 음악은 여기서 페이드아웃이 끝난다
     if credits:  # 노래가 끝난 뒤 멤버별 역할 크레딧 (참고 영상 문법) — 영상 자체 소리만
         end = round(total + credits["seconds"], 3)
@@ -336,7 +390,13 @@ def build_storyboard(selection: dict, candidates: list[dict], highlights: dict, 
     pace = selection.get("photoSeconds") or {}
     if not (isinstance(pace, dict) and all(isinstance(v, (int, float)) and v > 0 for v in pace.values())):
         raise ValueError(f'selection.json의 photoSeconds는 형식별 양수 초여야 합니다 (예: {{"youtube": 2.5}}): {pace!r}')
+    od = selection.get("outroDissolve", 0)
+    if isinstance(od, bool) or not isinstance(od, (int, float)) or not 0 <= od <= 3:
+        raise ValueError(f"selection.json의 outroDissolve는 0~3초여야 합니다 (마지막 장면이 아웃트로 카드로 서서히 바뀌는 길이): {od!r}")
+    pg = selection.get("photoGroup", 0)
+    if isinstance(pg, bool) or not isinstance(pg, int) or pg == 1 or not 0 <= pg <= 3:
+        raise ValueError(f"selection.json의 photoGroup은 0(끔) 또는 2~3이어야 합니다 (유튜브에서 이웃한 사진을 한 화면에 묶는 최대 장수): {pg!r}")
     return {"fps": FPS, "title": selection.get("title", ""), "ending": selection.get("ending", ""),
             "music": music_src, "sections": dict(sections, ignored=ignored),
-            "formats": {f: build_format(f, items, music, cards[f], pace.get(f), credits if f == "youtube" else None)
+            "formats": {f: build_format(f, items, music, cards[f], pace.get(f), credits if f == "youtube" else None, pg, float(od))
                         for f in formats}}

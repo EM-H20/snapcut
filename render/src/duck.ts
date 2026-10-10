@@ -8,8 +8,10 @@ export function musicVolume(t: number, shots: Shot[], total: number): number {
   let v = 1;
   for (const s of shots) {
     if (s.type !== 'video' || !s.liveAudio || s.duck === false) continue;  // duck: false면 음악도 그대로
-    const w = Math.min(Math.max(0, (t - (s.start - FADE)) / FADE), Math.max(0, (s.end + FADE - t) / FADE), 1);
-    v = Math.min(v, DUCK + (1 - DUCK) * (1 - w)); // 1-(1-DUCK)*w 는 부동소수 오차로 w=1에서 DUCK와 어긋남
+    const fade = s.duckFade ?? FADE;  // duckFade: 현장 소리 앞뒤로 음악이 서서히 줄었다 커지는 초
+    const w = Math.min(Math.max(0, (t - (s.start - fade)) / fade), Math.max(0, (s.end + fade - t) / fade), 1);
+    const level = typeof s.duck === 'number' ? s.duck : DUCK;  // duck: 0.6이면 이 장면은 음악을 60%까지만 줄임
+    v = Math.min(v, level + (1 - level) * (1 - w)); // 1-(1-level)*w 는 부동소수 오차로 w=1에서 level과 어긋남
   }
   return v * Math.min(1, Math.max(0, (total - t) / END_FADE));
 }

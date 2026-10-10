@@ -89,7 +89,7 @@ def _music(proj: Project, src: Path) -> tuple[str, dict]:
 def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
     """카드 배경 bg.mp4: 고른 영상 구간을 카드 크기로 자르거나, 없으면 검은 화면."""
     w, h = plan.FORMATS[fmt]["width"], plan.FORMATS[fmt]["height"]
-    key = hashlib.sha1(json.dumps([fmt, video, CARD_BG_SOURCE]).encode()).hexdigest()[:10]
+    key = hashlib.sha1(json.dumps([fmt, video, CARD_BG_SOURCE, plan.CARD_SECONDS]).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"bg_{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -117,17 +117,19 @@ def _card_bg(proj: Project, fmt: str, video: tuple[str, float] | None) -> Path:
     return dst
 
 
-def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tuple[str, float] | None = None) -> str:
+def _card(proj: Project, template: str, fmt: str, text: str, sub: str, video: tuple[str, float] | None = None,
+          exit: bool = False, layout: str | None = None) -> str:
     mtime = intro.template_file(template, fmt).stat().st_mtime
-    layout = "center" if video and Path(video[0]).suffix.lower() == ".jpg" else "wide"  # 사진 배경이면 글씨를 사진 안쪽으로
-    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video, layout, CARD_BG_SOURCE],
+    if layout is None:  # 사진 배경이면 글씨를 사진 안쪽으로
+        layout = "center" if video and Path(video[0]).suffix.lower() == ".jpg" else "wide"
+    key = hashlib.sha1(json.dumps([template, fmt, text, sub, mtime, video, layout, CARD_BG_SOURCE, exit],
                                   ensure_ascii=False).encode()).hexdigest()[:10]
     dst = proj.cache / "cards" / f"{key}.mp4"
     if not dst.exists():
         dst.parent.mkdir(parents=True, exist_ok=True)
         part = dst.with_name(f"{key}.part.mp4")
         try:
-            intro.render_card(template, fmt, text, sub, part, _card_bg(proj, fmt, video), layout)
+            intro.render_card(template, fmt, text, sub, part, _card_bg(proj, fmt, video), layout, exit)
             os.replace(part, dst)
         finally:
             part.unlink(missing_ok=True)
@@ -176,8 +178,11 @@ def cmd_plan(args) -> None:
     intro_video, outro_video = plan.card_video(sel, "introVideo", cands), plan.card_video(sel, "outroVideo", cands)
     music_src, analysis = _music(proj, _resolve_music(sel["music"]))
     card_tpl = sel.get("intro") or "basic"
+    outro_layout = sel.get("outroLayout")
+    if outro_layout not in (None, "wide", "center", "top", "low"):
+        raise SystemExit(f'selection.json의 outroLayout은 "wide", "center", "top", "low" 중 하나여야 합니다 (top: 단체 사진처럼 사람이 화면을 채울 때 글씨를 위쪽에, low: 화면 2/3 아래쪽 한 줄): {outro_layout!r}')
     cards = {f: {"intro": _card(proj, card_tpl, f, sel.get("title", ""), sel.get("subtitle", ""), intro_video),
-                 "outro": _card(proj, card_tpl, f, sel.get("ending", ""), "", outro_video)}
+                 "outro": _card(proj, card_tpl, f, sel.get("ending", ""), "", outro_video, exit=True, layout=outro_layout)}
              for f in formats if f in plan.FORMATS}
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
     if sel.get("credits") and CREDITS_FONT.exists():
