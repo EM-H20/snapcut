@@ -124,3 +124,10 @@ def test_preview_adds_labels_render_does_not():
     assert 'class="clip tag"' not in mv.build(_sb(ALL), "youtube")
     p = mv.build(_sb(ALL), "youtube", preview=True)
     assert '>p<' in p and 'addEventListener("keydown"' in p
+
+
+def test_credits_font_named_only_when_shipped():
+    # @font-face 없이 글꼴 이름만 쓰면 lint 오류(font_family_without_font_face) — 크레딧 글꼴이 있을 때만 이름을 쓴다
+    assert "SnapcutHand" not in mv.build(_sb(ALL), "youtube")
+    html = mv.build(dict(_sb(ALL), font="fonts/hand.ttf"), "youtube")
+    assert '@font-face{font-family:SnapcutHand;src:url("fonts/hand.ttf")}' in html and "font-family:SnapcutHand" in html

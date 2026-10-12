@@ -19,7 +19,7 @@ CSS = """body{margin:0;background:#000}
 .bgfill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(30px) brightness(.6);transform:scale(1.2)}
 .credits{position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;flex-direction:column;align-items:center}
 .roll{display:flex;flex-direction:column;align-items:center}
-.credit-line{font-family:SnapcutHand,sans-serif;line-height:1.2;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.5);white-space:nowrap}
+.credit-line{font-family:sans-serif;line-height:1.2;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.5);white-space:nowrap}
 .dark{position:absolute;inset:0;background:#000;opacity:0}
 .tag{position:absolute;left:16px;top:16px;padding:6px 12px;background:rgba(0,0,0,.6);color:#fff;font:28px monospace;border-radius:6px;z-index:100000}
 """
@@ -219,5 +219,6 @@ def build(sb: dict, fmt: str, preview: bool = False) -> str:
                    f'data-automation="{attr(json.dumps(lane))}"></audio>')
     if preview:
         js.append(COPY_JS)
-    css = f'@font-face{{font-family:SnapcutHand;src:url("{sb["font"]}")}}' if sb.get("font") else ""
+    css = (f'@font-face{{font-family:SnapcutHand;src:url("{sb["font"]}")}}'  # 크레딧 손글씨 — 글꼴 파일이 있을 때만 이름을 쓴다
+           '.credit-line{font-family:SnapcutHand,sans-serif}') if sb.get("font") else ""
     return page(w, h, total_f, fps, "\n".join(body), js, css)

@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 
@@ -35,6 +36,17 @@ def test_prepare_plan_render(sample_project):
     assert any(s["codec_type"] == "audio" for s in info["streams"])
     cards = list((sample_project / ".cache" / "cards").glob("*.mp4"))
     assert cards and all(not c.name.endswith(".part.mp4") for c in cards)
-    assert abs(float(ff.probe(cards[0])["format"]["duration"]) - 3.0) < 0.1
+    assert abs(float(ff.probe(cards[0])["format"]["duration"]) - 11.0) < 0.1  # 카드 계약 11초 (intro.py 템플릿)
     plan = sb["formats"]["reels"]
     assert abs(float(info["format"]["duration"]) - (plan["musicEnd"] - plan["musicStart"])) < 0.2
+    # lint는 폴더에 구성 파일이 하나(index.html)일 때만 본다 — 형식 하나만 링크로 모은 폴더에서 검사
+    render_dir, lint_dir = sample_project / ".cache" / "render", sample_project / "lint"
+    lint_dir.mkdir()
+    for p in render_dir.iterdir():
+        if p.suffix != ".html":
+            (lint_dir / p.name).symlink_to(p)
+    shutil.copyfile(render_dir / "reels.html", lint_dir / "index.html")
+    lint = subprocess.run(["npx", "-y", "hyperframes@0.8.149", "lint", str(lint_dir), "--json"], capture_output=True, text=True)
+    errors = [f for f in json.loads(lint.stdout).get("findings", []) if f.get("severity") == "error"
+              and not (f.get("code") == "missing_local_asset" and "heic/" in f.get("message", ""))]  # HEIC 변환본은 렌더 뒤 지운다
+    assert not errors, errors
