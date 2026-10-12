@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapcut 설치: 필수 도구 → Python 가상환경 → Remotion → Finder 빠른 동작. 여러 번 실행해도 안전하다.
+# snapcut 설치: 필수 도구 → Python 가상환경 → HyperFrames·키트 → Finder 빠른 동작. 여러 번 실행해도 안전하다.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,16 +36,10 @@ if [ -z "$PY" ]; then
   PY=python3.13
 fi
 
-CHROME="${SNAPCUT_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-[ -x "$CHROME" ] || echo "  참고: Google Chrome이 없습니다. 렌더는 Remotion 번들 브라우저로 시도하며 일부 Mac에서는 실패합니다 — Chrome 설치를 권장합니다."
-
 say "Python 패키지 설치 (.venv, $("$PY" --version))"
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -e '.[dev]'
-
-say "Remotion 설치 (render/)"
-(cd render && npm install --no-audit --no-fund --loglevel=error)
 
 say "HyperFrames 내려받기 + 작업 스킬 설치"
 npx -y hyperframes@0.8.149 --version >/dev/null

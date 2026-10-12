@@ -4,14 +4,12 @@
 
 ## 구조
 - `pipeline/` (Python): 변환·선별·분석·타임라인. `python -m pipeline <convert|prepare|plan|studio|render|music>`
-- `render/` (Remotion): `.cache/storyboard.json`을 public dir에서 fetch해 렌더
-- `render/remotion.config.ts`: 렌더용 Chrome 경로 (SNAPCUT_CHROME 또는 설치된 Google Chrome)
+- `pipeline/hf/`: storyboard → HyperFrames 구성 HTML(뮤비·롱폼·쇼츠)과 렌더·미리보기 실행 (hyperframes@0.8.149)
 - `공용/음악/` 곡 라이브러리(git 제외), `공용/인트로아웃트로/<템플릿>/` HyperFrames 카드
 - `projects/<이름>/영상소스/` 원본(읽기 전용), `selection.json`(Claude 작성), `.cache/`, `output/` — 전부 git 제외
 
 ## 명령
 - 테스트: `.venv/bin/python -m pytest` (빠름), `.venv/bin/python -m pytest -m slow` (렌더 E2E)
-- Remotion: `cd render && npm test && npm run typecheck`
 - 품질 점검: `.venv/bin/python -m pipeline check <이름> [mp4]` (render가 끝나면 자동), 음량: `pipeline master <mp4>`
 - 외부 키트: `.venv/bin/python -m pipeline kits` (kits.lock 커밋으로 kits/에 받기)
 

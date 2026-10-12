@@ -13,6 +13,6 @@
    `in/out`은 원본 기준 초. 문장 중간에 걸친 경계는 plan이 문장 밖으로 민다. 시점 주인(`pov`, 기본 마이크1)은 아래 자막바, 나머지는 고정된 쪽 말풍선(기본 왼쪽·오른쪽 교대, `side`로 지정). 트랙 하나짜리 영상의 이름표는 `"speaker": "이름"`. 스타일은 `공용/자막/`(`둥글배그` 기본, `흰바`, `동글파랑`, `빨강정보`).
    `"shorts": false`면 그 구간은 쇼츠를 만들지 않는다. 쇼츠는 1분 안팎 구간이 좋다.
 4. **plan** — `.venv/bin/python -m pipeline plan <영상명>`. `주의:` 줄은 그대로 전한다.
-5. **확인** — `studio`를 백그라운드로 띄우고 http://localhost:3000/longform 을 알려준다(쇼츠는 /shorts — 첫 클립)(reels/youtube 컴포지션은 롱폼에서 오류가 나는 게 정상). 수정은 longform.json을 고치고 plan 재실행 → 새로고침.
+5. **확인** — `studio`를 백그라운드로 띄우고 http://localhost:3002 를 알려준다(롱폼 기본, 쇼츠는 `--format shorts` — 첫 클립). 수정은 longform.json을 고치고 plan → studio 다시 실행 → 새로고침.
 6. **렌더** — `.venv/bin/python -m pipeline render <영상명>` → `output/<영상명>_longform.mp4` + `.srt`, 쇼츠는 `output/shorts/`.
 
