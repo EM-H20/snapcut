@@ -21,6 +21,12 @@ SECTION_NAMES = ("브릿지", "브레이크", "마지막후렴", "피날레")  #
 FINALE_BARS = 8  # 피날레 = 마지막후렴 + 이 마디 수 (selection "finaleBars"로 덮어씀)
 
 
+def avg_speed(it: dict) -> float:
+    """평균 배속. [시작, 끝](스피드 램프)은 장면 동안 직선으로 바뀌므로 두 값의 가운데."""
+    sp = it.get("speed", 1.0)
+    return (sp[0] + sp[1]) / 2 if isinstance(sp, list) else sp
+
+
 def subsample(items: list, n: int) -> list:
     if n >= len(items):
         return list(items)
