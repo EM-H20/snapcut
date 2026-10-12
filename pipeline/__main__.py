@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, longform, music, plan, render_src, template, transcribe
+from . import contact, convert, curate, ff, highlights, intro, kits, longform, music, plan, render_src, template, transcribe
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -288,6 +288,14 @@ def cmd_music(args) -> None:
         print(m.name)
 
 
+def cmd_kits(args) -> None:
+    lock = kits.load_lock()
+    for w in kits.sync(lock):
+        print(f"경고: {w}")
+    for line in kits.status(lock):
+        print(line)
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="python -m pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -304,14 +312,15 @@ def main(argv=None) -> None:
     r.add_argument("project")
     r.add_argument("--formats", default=None)
     sub.add_parser("music")
+    sub.add_parser("kits")
     args = p.parse_args(argv)
-    needs = ([] if args.cmd == "music" else [("ffmpeg", "brew install ffmpeg")]) + \
+    needs = ([] if args.cmd in ("music", "kits") else [("ffmpeg", "brew install ffmpeg")]) + \
         ([("npx", "Node.js 설치")] if args.cmd in ("plan", "studio", "render") else [])
     for tool, hint in needs:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

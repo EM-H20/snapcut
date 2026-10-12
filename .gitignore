@@ -7,6 +7,7 @@ projects/
 공용/모델
 
 # 생성물
+kits/
 node_modules/
 .venv/
 __pycache__/
