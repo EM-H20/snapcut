@@ -29,6 +29,8 @@ description: 영상 만들기 전부의 입구. 여행·행사 사진/영상 추
 ```
 `mode`는 위 표의 영문 이름. `kit`은 외부 키트를 쓰는 모드에서 `kits.lock`의 이름. 영상소스가 없는 모드(promo, animation, web)는 `projects/<이름>/`만 만든다.
 
+사용자가 느낌으로 요청하면("몽환적으로", "확 터지게") `references/techniques.md`를 읽고 기법으로 바꿔 제안한다.
+
 ## 3. 렌더 후 점검 (모든 모드)
 - 렌더는 사용자가 요청할 때만 한다.
 - `pipeline render`는 끝나면 음량 마스터링과 품질 점검을 자동으로 돈다. 키트가 직접 만든 mp4는 `output/`에 두고 `pipeline master <mp4>` → `pipeline check <이름>`을 직접 돌린다.
