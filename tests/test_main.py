@@ -134,18 +134,6 @@ def test_section_report_line():
     assert line == "구간: 브릿지 2:06.8(추정), 브레이크 2:33.5, 마지막후렴 2:43.8, 피날레 2:54.8"
 
 
-def test_render_uses_render_public_dir(monkeypatch, tmp_path):
-    from pipeline import render_src
-    proj = _project(tmp_path)
-    proj.cache.mkdir()
-    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {}}}))
-    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
-    monkeypatch.setattr(render_src, "clean", lambda root: None)
-    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
-    seen = []
-    monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: seen.append(cmd) or type("R", (), {"returncode": 0})())
-    cli.main(["render", str(proj.root)])
-    assert f"--public-dir={proj.cache / 'render'}" in seen[0]
 
 
 def test_card_bg_comes_from_hdr_original_as_sdr(tmp_path):
@@ -177,23 +165,6 @@ def test_render_validates_formats_before_building(monkeypatch, tmp_path):
     assert built == []  # 잘못된 형식이면 변환 전에 멈춘다
 
 
-def test_render_cleans_conversions_only_after_success(monkeypatch, tmp_path):
-    from pipeline import render_src
-    proj = _project(tmp_path)
-    proj.cache.mkdir()
-    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {}}}))
-    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
-    cleaned = []
-    monkeypatch.setattr(render_src, "clean", lambda root: cleaned.append(root))
-    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
-    code = {"rc": 1}
-    monkeypatch.setattr(cli.subprocess, "run", lambda cmd, **kw: type("R", (), {"returncode": code["rc"]})())
-    with pytest.raises(SystemExit, match="렌더 실패"):
-        cli.main(["render", str(proj.root)])
-    assert cleaned == []  # 실패하면 남겨 둔다
-    code["rc"] = 0
-    cli.main(["render", str(proj.root)])
-    assert cleaned == [proj.cache / "render"]
 
 
 def test_card_bg_missing_manifest_entry_is_korean_error(tmp_path):
@@ -233,15 +204,87 @@ def test_plan_longform_needs_transcript(monkeypatch, tmp_path):
         cli.main(["plan", str(proj.root)])
 
 
-def test_render_longform_uses_cache_as_public_dir_and_writes_srt(monkeypatch, tmp_path):
+
+
+
+
+def test_plan_longform_unknown_style_lists_choices(monkeypatch, tmp_path):
+    proj = _longform_project(tmp_path)
+    (proj.root / "longform.json").write_text(json.dumps(
+        {"clips": [{"in": 2.0, "out": 5.0}], "captionStyle": "없는스타일"}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    with pytest.raises(SystemExit, match="흰바"):
+        cli.main(["plan", str(proj.root)])
+
+
+MINI = {"fps": 30, "music": "music/s.mp3", "formats": {"youtube": {
+    "width": 1920, "height": 1080, "musicStart": 0.0, "musicEnd": 2.0, "musicFadeEnd": 2.0,
+    "shots": [{"type": "photo", "src": "media/p.jpg", "start": 0, "end": 2, "kenBurns": "still"}]}}}
+
+
+def _public(proj, sb=MINI):
+    root = proj.cache / "render"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "storyboard.json").write_text(json.dumps(sb))
+    return root
+
+
+def _fake_hf(monkeypatch, calls, fail=False):
+    from pipeline.hf import engine
+
+    def render(root, comp, out):
+        calls.append((root, comp, out))
+        if fail:
+            raise RuntimeError("HyperFrames 렌더 실패")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"x")
+    monkeypatch.setattr(engine, "render", render)
+    monkeypatch.setattr(cli.master, "master", lambda p: False)
+    monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: {"ok": True, "issues": [], "loudness": None, "sheets": []})
+
+
+def test_render_writes_hf_composition_in_render_dir(monkeypatch, tmp_path):
+    from pipeline import render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps(MINI))
+    monkeypatch.setattr(render_src, "build", lambda p, f: _public(p))
+    monkeypatch.setattr(render_src, "clean", lambda root: None)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    calls = []
+    _fake_hf(monkeypatch, calls)
+    cli.main(["render", str(proj.root)])
+    assert calls == [(proj.cache / "render", "youtube.html", proj.output / f"{proj.root.name}_youtube.mp4")]
+    assert 'data-composition-id="main"' in (proj.cache / "render" / "youtube.html").read_text()
+
+
+def test_render_cleans_conversions_only_after_success(monkeypatch, tmp_path):
+    from pipeline import render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps(MINI))
+    monkeypatch.setattr(render_src, "build", lambda p, f: _public(p))
+    cleaned = []
+    monkeypatch.setattr(render_src, "clean", lambda root: cleaned.append(root))
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    _fake_hf(monkeypatch, [], fail=True)
+    with pytest.raises(SystemExit, match="렌더 실패"):
+        cli.main(["render", str(proj.root)])
+    assert cleaned == []  # 실패하면 남겨 둔다
+    _fake_hf(monkeypatch, [])
+    cli.main(["render", str(proj.root)])
+    assert cleaned == [proj.cache / "render"]
+
+
+def test_render_longform_writes_html_in_cache_and_srt(monkeypatch, tmp_path):
     proj = _longform_project(tmp_path)
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
     cli.main(["plan", str(proj.root)])
     calls = []
-    monkeypatch.setattr(cli.subprocess, "run", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    _fake_hf(monkeypatch, calls)
     cli.main(["render", str(proj.root)])
-    assert calls[0][4:6] == ["longform", str(proj.output / f"{proj.root.name}_longform.mp4")]  # npx remotion render src/index.ts <comp> <out>
-    assert f"--public-dir={proj.cache}" in calls[0]
+    assert calls[0] == (proj.cache, "longform.html", proj.output / f"{proj.root.name}_longform.mp4")  # 기본 형식은 롱폼 + 쇼츠
+    assert "첫 문장" in (proj.cache / "longform.html").read_text(encoding="utf-8")
     srt = (proj.output / f"{proj.root.name}_longform.srt").read_text(encoding="utf-8")
     assert srt.startswith("1\n00:00:00,300 --> 00:00:02,300\n첫 문장")
 
@@ -254,44 +297,43 @@ def test_render_shorts_one_render_per_clip_with_safe_names(monkeypatch, tmp_path
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
     cli.main(["plan", str(proj.root)])
     calls = []
-    monkeypatch.setattr(cli.subprocess, "run", lambda args, **kw: calls.append(args) or type("R", (), {"returncode": 0})())
+    _fake_hf(monkeypatch, calls)
     cli.main(["render", str(proj.root)])
-    outs = [c[5] for c in calls]
-    assert [c[4] for c in calls] == ["shorts", "shorts"]
-    assert outs == [str(proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.mp4"),
-                    str(proj.output / "shorts" / f"{proj.root.name}_02.mp4")]
-    assert '--props={"clip": 0}' in calls[0] and '--props={"clip": 1}' in calls[1]
+    assert [c[1] for c in calls] == ["shorts_01.html", "shorts_02.html"]
+    assert [c[2] for c in calls] == [proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.mp4",
+                                     proj.output / "shorts" / f"{proj.root.name}_02.mp4"]
     assert (proj.output / "shorts" / f"{proj.root.name}_01_바론_스틸.srt").exists()
 
 
-def test_plan_longform_unknown_style_lists_choices(monkeypatch, tmp_path):
-    proj = _longform_project(tmp_path)
-    (proj.root / "longform.json").write_text(json.dumps(
-        {"clips": [{"in": 2.0, "out": 5.0}], "captionStyle": "없는스타일"}, ensure_ascii=False), encoding="utf-8")
-    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
-    with pytest.raises(SystemExit, match="흰바"):
-        cli.main(["plan", str(proj.root)])
-
-
 def test_render_masters_then_checks_each_output(monkeypatch, tmp_path):
-    from pipeline import check, master, render_src
+    from pipeline import render_src
     proj = _project(tmp_path)
     proj.cache.mkdir()
-    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {"shots": [{"type": "photo", "start": 0, "end": 2}]}}}))
-    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
+    proj.storyboard.write_text(json.dumps(MINI))
+    monkeypatch.setattr(render_src, "build", lambda p, f: _public(p))
     monkeypatch.setattr(render_src, "clean", lambda root: None)
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
-
-    def fake_run(cmd, **kw):
-        proj.output.mkdir(exist_ok=True)
-        (proj.output / f"{proj.root.name}_youtube.mp4").write_bytes(b"x")
-        return type("R", (), {"returncode": 0})()
-    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    _fake_hf(monkeypatch, [])
     order = []
-    monkeypatch.setattr(master, "master", lambda p: order.append(("master", p.name)) or True)
-    monkeypatch.setattr(check, "check_file", lambda p, v, d: order.append(("check", p.name, v["duration"]))
+    monkeypatch.setattr(cli.master, "master", lambda p: order.append(("master", p.name)) or True)
+    monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: order.append(("check", p.name, v["duration"]))
                         or {"ok": False, "issues": [{"detail": "x"}], "loudness": None, "sheets": []})
     cli.main(["render", str(proj.root)])  # 점검 실패는 렌더 실패가 아니다 — 예외 없이 끝나고 알린다
     name = f"{proj.root.name}_youtube.mp4"
     assert order == [("master", name), ("check", name, 2)]
     assert json.loads((proj.output / "check.json").read_text())[name]["ok"] is False
+
+
+def test_studio_writes_preview_index_and_starts_hf(monkeypatch, tmp_path):
+    from pipeline.hf import engine
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    sb = json.loads(json.dumps(MINI))
+    sb["formats"]["reels"] = dict(sb["formats"]["youtube"], width=1080, height=1920)
+    proj.storyboard.write_text(json.dumps(sb))
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    seen = []
+    monkeypatch.setattr(engine, "preview", lambda root: seen.append(root))
+    cli.main(["studio", str(proj.root), "--format", "reels"])
+    index = (proj.cache / "index.html").read_text()
+    assert seen == [proj.cache] and 'data-width="1080"' in index and 'class="clip tag"' in index

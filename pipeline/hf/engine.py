@@ -1,0 +1,34 @@
+"""HyperFrames 실행: 렌더·미리보기, 프리즈 프레임용 정지 사진 뽑기."""
+import subprocess
+from pathlib import Path
+
+from .. import ff, kits
+from . import mv
+
+HF = f"hyperframes@{kits.HF_VERSION}"
+RENDER_TIMEOUT = 3600
+
+
+def render(root: Path, comp: str, out: Path) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        r = subprocess.run(["npx", "-y", HF, "render", str(root), "-c", comp, "-f", "30", "-o", str(out), "--quiet"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"HyperFrames 렌더가 {RENDER_TIMEOUT // 60}분 안에 끝나지 않았습니다 ({out.name})")
+    if r.returncode:
+        raise RuntimeError(f"HyperFrames 렌더 실패 ({out.name}): {(r.stderr or r.stdout)[-800:]}")
+
+
+def preview(root: Path) -> None:
+    """root/index.html을 HF Studio로 띄운다 (끝날 때까지 돈다 — 백그라운드로 실행)."""
+    subprocess.run(["npx", "-y", HF, "preview", str(root)])
+
+
+def freeze_stills(root: Path, fmt: str, shots: list[dict]) -> None:
+    """freeze가 있는 영상 장면의 마지막 프레임을 mv.still 경로에 jpg로 뽑는다."""
+    for i, s in enumerate(shots):
+        if s["type"] == "video" and s.get("freeze"):
+            dst = root / mv.still(fmt, i)
+            dst.parent.mkdir(exist_ok=True)
+            ff.run("-ss", f"{max(0.0, s['out'] - 1 / 30):.3f}", "-i", str(root / s["src"]), "-frames:v", "1", "-q:v", "2", str(dst))

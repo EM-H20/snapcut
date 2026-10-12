@@ -9,9 +9,9 @@ import unicodedata
 from pathlib import Path
 
 from . import check, contact, convert, curate, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
-from .paths import ROOT, SHARED, Project, project
+from .hf import engine, long as hf_long, mv
+from .paths import SHARED, Project, project
 
-RENDER_DIR = ROOT / "render"
 LONGFORM_FILE = "longform.json"  # 있으면 롱폼 모드 (Claude가 고른 구간)
 MUSIC_DIR = SHARED / "음악"
 CREDITS_FONT = SHARED / "인트로아웃트로" / "handwritten" / "NanumPenScript-Regular.ttf"  # 크레딧 손글씨
@@ -211,20 +211,30 @@ def section_report(sec: dict) -> str:
 
 def cmd_studio(args) -> None:
     proj = project(args.project)
-    subprocess.run(["npx", "remotion", "studio", "src/index.ts", f"--public-dir={proj.cache}"], cwd=RENDER_DIR)
+    if not proj.storyboard.exists():
+        raise SystemExit(f"먼저 plan을 실행하세요: python -m pipeline plan {args.project}")
+    sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))
+    if sb.get("mode") == "longform":
+        fmt = args.format or next(iter(sb["formats"]))
+        page = hf_long.build(sb, fmt)
+    else:
+        fmt = args.format or next(iter(sb["formats"]))
+        if fmt not in sb["formats"]:
+            raise SystemExit(f"storyboard에 '{fmt}' 형식이 없습니다 (있는 형식: {', '.join(sb['formats'])})")
+        engine.freeze_stills(proj.cache, fmt, sb["formats"][fmt]["shots"])
+        page = mv.build(sb, fmt, preview=True)
+    (proj.cache / "index.html").write_text(page, encoding="utf-8")
+    print(f"미리보기: {fmt} (다른 형식은 --format)")
+    engine.preview(proj.cache)
 
 
 def _safe(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_") if name else ""
 
 
-def _render_one(proj: Project, comp: str, out: Path, captions: list[dict], props: dict | None = None) -> Path:
-    out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = ["npx", "remotion", "render", "src/index.ts", comp, str(out), f"--public-dir={proj.cache}"]
-    if props is not None:
-        cmd.append(f"--props={json.dumps(props)}")
-    if subprocess.run(cmd, cwd=RENDER_DIR).returncode:
-        raise SystemExit(f"{out.name} 렌더 실패")
+def _render_one(proj: Project, page: str, comp: str, out: Path, captions: list[dict]) -> Path:
+    (proj.cache / comp).write_text(page, encoding="utf-8")
+    engine.render(proj.cache, comp, out)
     out.with_suffix(".srt").write_text(longform.srt(captions), encoding="utf-8")
     print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
     return out
@@ -236,9 +246,11 @@ def _render_longform(proj: Project, sb: dict, formats: list[str]) -> list[Path]:
         if f == "shorts":
             for i, s in enumerate(sb["formats"]["shorts"]):
                 name = "_".join(x for x in (proj.root.name, f"{i + 1:02d}", _safe(s["title"])) if x)
-                outs.append(_render_one(proj, "shorts", proj.output / "shorts" / f"{name}.mp4", s["captions"], {"clip": i}))
+                outs.append(_render_one(proj, hf_long.build(sb, "shorts", i), f"shorts_{i + 1:02d}.html",
+                                        proj.output / "shorts" / f"{name}.mp4", s["captions"]))
         else:
-            outs.append(_render_one(proj, f, proj.output / f"{proj.root.name}_{f}.mp4", sb["formats"][f]["captions"]))
+            outs.append(_render_one(proj, hf_long.build(sb, f), f"{f}.html", proj.output / f"{proj.root.name}_{f}.mp4",
+                                    sb["formats"][f]["captions"]))
     return outs
 
 
@@ -253,17 +265,20 @@ def cmd_render(args) -> None:
             raise SystemExit(f"storyboard에 '{f}' 형식이 없습니다. selection.json의 formats에 넣고 plan을 다시 실행하세요.")
     if sb.get("mode") == "longform":
         return finish(proj, _render_longform(proj, sb, formats))
-    public = render_src.build(proj, formats)  # 원본을 링크로 가리키는 렌더용 폴더 (Studio는 계속 .cache)
-    proj.output.mkdir(exist_ok=True)
+    public = render_src.build(proj, formats)  # 원본을 링크로 가리키는 렌더용 폴더 (미리보기는 계속 .cache)
+    rsb = json.loads((public / "storyboard.json").read_text(encoding="utf-8"))
     outs = []
-    for f in formats:
-        out = proj.output / f"{proj.root.name}_{f}.mp4"
-        outs.append(out)
-        r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={public}"], cwd=RENDER_DIR)
-        if r.returncode:
-            raise SystemExit(f"{f} 렌더 실패")
-        print(f"완성: {out}")
-    render_src.clean(public)  # HDR·HEIC 변환본은 렌더가 끝나면 지운다
+    try:
+        for f in formats:
+            out = proj.output / f"{proj.root.name}_{f}.mp4"
+            engine.freeze_stills(public, f, rsb["formats"][f]["shots"])
+            (public / f"{f}.html").write_text(mv.build(rsb, f), encoding="utf-8")
+            engine.render(public, f"{f}.html", out)
+            print(f"완성: {out}")
+            outs.append(out)
+    except RuntimeError as e:
+        raise SystemExit(f"{e} — 렌더 실패")
+    render_src.clean(public)  # HDR·HEIC·멈춘 프레임 변환본은 렌더가 끝나면 지운다
     finish(proj, outs)
 
 
@@ -342,8 +357,11 @@ def cmd_kits(args) -> None:
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="python -m pipeline")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("convert", "plan", "studio"):
+    for name in ("convert", "plan"):
         sub.add_parser(name).add_argument("project")
+    st = sub.add_parser("studio")
+    st.add_argument("project")
+    st.add_argument("--format", default=None, help="미리볼 형식 (youtube, reels, longform, shorts — 없으면 첫 형식)")
     pr = sub.add_parser("prepare")
     pr.add_argument("project")
     pr.add_argument("--keep-blur", action="store_true", help="흔들린 사진도 후보로 남긴다")

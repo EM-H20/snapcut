@@ -4,9 +4,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from . import kits
 from .paths import SHARED
 
-HYPERFRAMES = "hyperframes@0.8.140"
+HYPERFRAMES = f"hyperframes@{kits.HF_VERSION}"
 CARD_TIMEOUT = 600
 ORIENTATION = {"reels": "portrait", "youtube": "landscape"}
 
