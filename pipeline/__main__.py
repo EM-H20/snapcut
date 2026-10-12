@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import contact, convert, curate, ff, highlights, intro, kits, longform, music, plan, render_src, template, transcribe
+from . import check, contact, convert, curate, ff, highlights, intro, kits, longform, music, plan, render_src, template, transcribe
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -283,6 +283,28 @@ def cmd_transcribe(args) -> None:
     print("큰 소리 순간: " + ", ".join(_mmss(s) for s in transcribe.loud_moments(db)))
 
 
+def run_checks(proj: Project, files: list[Path], fmt: str | None = None) -> bool:
+    """mp4들을 점검하고 output/check.json에 남긴다. 전부 통과하면 True."""
+    sb = json.loads(proj.storyboard.read_text(encoding="utf-8")) if proj.storyboard.exists() else None
+    results = {}
+    for f in files:
+        view = check.plan_view(sb, fmt or check.format_of(f, sb))
+        results[f.name] = r = check.check_file(f, view, proj.output / "check" / f.stem)
+        print(check.summary(f.name, r))
+    proj.output.mkdir(exist_ok=True)
+    (proj.output / "check.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    return all(r["ok"] for r in results.values())
+
+
+def cmd_check(args) -> None:
+    proj = project(args.project, require_sources=False)
+    files = [Path(args.mp4).expanduser()] if args.mp4 else sorted(proj.output.rglob("*.mp4"))
+    if not files:
+        raise SystemExit(f"점검할 mp4가 없습니다: {proj.output}")
+    if not run_checks(proj, files, args.format):
+        raise SystemExit("점검 실패 — 위 항목을 고친 뒤 다시 렌더하세요")
+
+
 def cmd_music(args) -> None:
     for m in list_music():
         print(m.name)
@@ -313,6 +335,10 @@ def main(argv=None) -> None:
     r.add_argument("--formats", default=None)
     sub.add_parser("music")
     sub.add_parser("kits")
+    ck = sub.add_parser("check")
+    ck.add_argument("project")
+    ck.add_argument("mp4", nargs="?", default=None, help="점검할 파일 (없으면 output/의 mp4 전부)")
+    ck.add_argument("--format", default=None, help="storyboard 형식 이름 (파일 이름으로 못 찾을 때)")
     args = p.parse_args(argv)
     needs = ([] if args.cmd in ("music", "kits") else [("ffmpeg", "brew install ffmpeg")]) + \
         ([("npx", "Node.js 설치")] if args.cmd in ("plan", "studio", "render") else [])
@@ -320,7 +346,7 @@ def main(argv=None) -> None:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits, "check": cmd_check}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

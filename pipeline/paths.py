@@ -35,7 +35,7 @@ class Project:
         return self.cache / "storyboard.json"
 
 
-def project(arg: str) -> Project:
+def project(arg: str, require_sources: bool = True) -> Project:
     p = Path(arg).expanduser()
     if not p.exists():
         p = ROOT / "projects" / arg
@@ -43,6 +43,8 @@ def project(arg: str) -> Project:
     if unicodedata.normalize("NFC", p.name) == "영상소스":
         p = p.parent
     proj = Project(p)
-    if not proj.sources.is_dir():
+    if require_sources and not proj.sources.is_dir():
         raise SystemExit(f"영상소스 폴더가 없습니다: {proj.sources}")
+    if not proj.root.is_dir():
+        raise SystemExit(f"프로젝트 폴더가 없습니다: {proj.root}")
     return proj
