@@ -29,12 +29,14 @@ def test_all_effects_render_and_pass_check(sample_project):
              {"id": photos[3]}, {"id": vids[0], "in": 0.0, "out": 2.5, "speed": 4}]
     song = sample_project / "long.wav"  # 기본 30초 곡은 인트로·아웃트로를 빼면 11초뿐이라 효과 장면이 빠진다
     make_click_track(song, seconds=60.0)
-    sel = {"title": "효과", "ending": "끝", "formats": ["youtube"], "music": str(song), "items": items}
+    sel = {"title": "효과", "ending": "끝", "formats": ["youtube"], "music": str(song), "items": items,
+           "credits": {"lines": ["운전 A", "총무 B"], "video": {"id": v_audio, "in": 0.0}, "seconds": 3}}  # 크레딧 롤도 실제 렌더로
     (sample_project / "selection.json").write_text(json.dumps(sel, ensure_ascii=False), encoding="utf-8")
     _cli("plan", str(sample_project))
     sb = json.loads((sample_project / ".cache" / "storyboard.json").read_text(encoding="utf-8"))
     keys = {k for s in sb["formats"]["youtube"]["shots"] for k in s}
     assert {"whip", "wipe", "shake", "dutch", "speed", "freeze", "jcut", "lcut", "blur"} <= keys
+    assert sb["formats"]["youtube"]["shots"][-1]["type"] == "credits"
     _cli("render", str(sample_project), "--formats", "youtube")
     out = sample_project / "output" / f"{sample_project.name}_youtube.mp4"
     r = check.check_file(out, check.plan_view(sb, "youtube"), sample_project / "output" / "check" / "fx")
