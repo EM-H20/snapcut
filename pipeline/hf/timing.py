@@ -57,7 +57,7 @@ def music_volume(t: float, shots: list[dict], total: float) -> float:
         if not _ducked(s):
             continue
         fade = s.get("duckFade", DUCK_FADE)
-        a, b = s["start"] - s.get("jcut", 0), s["end"] + s.get("lcut", 0)
+        a, b = s["start"] - s.get("jcut", 0), s["end"] - s.get("freeze", 0) + s.get("lcut", 0)
         w = min(max(0.0, (t - (a - fade)) / fade), max(0.0, (b + fade - t) / fade), 1.0)
         level = s.get("duck", DUCK)
         v = min(v, level + (1 - level) * (1 - w))  # 1-(1-level)*w는 부동소수 오차로 w=1에서 level과 어긋남
@@ -70,7 +70,7 @@ def duck_lane(shots: list[dict], total: float, fade_end: float, step: float = 0.
     for s in shots:
         if _ducked(s):
             fd = s.get("duckFade", DUCK_FADE)
-            a, b = s["start"] - s.get("jcut", 0), s["end"] + s.get("lcut", 0)
+            a, b = s["start"] - s.get("jcut", 0), s["end"] - s.get("freeze", 0) + s.get("lcut", 0)
             ramps += [(a - fd, a), (b, b + fd)]
     points = {0.0, total}
     for a, b in ramps:

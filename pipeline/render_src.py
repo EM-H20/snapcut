@@ -11,9 +11,10 @@ from PIL import Image, ImageOps
 
 from . import convert, ff
 from .paths import Project
+from .plan import avg_speed
 
 LINKS = ("cards", "music", "fonts")  # .cache에서 그대로 쓰는 폴더
-MARGIN = 1.0  # HDR 변환 구간 앞뒤 여유(초) — 다음 장면 디졸브(최대 1초) 동안 이 장면이 더 남는다
+BEFORE, AFTER = 1.0, 1.5  # HDR 변환 구간 앞뒤 여유(초). 뒤: 다음 장면 디졸브(≤1)·와이프(≤1.5) 동안 이 장면이 더 남는다 (배속이면 그만큼 더)
 HDR_CRF = "12"  # 렌더 직전 한 번뿐인 변환이라 거의 무손실로
 HDR_ENCODE = "vt-bt709-grade1"  # 변환 방식 버전 — 바꾸면 기존 변환본을 다시 만든다
 CONVERTED = ("hdr", "heic", "freeze")  # 렌더가 끝나면 지우는 변환본 폴더 (freeze: 프리즈 프레임 정지 사진)
@@ -97,8 +98,9 @@ def _shot(proj: Project, root: Path, s: dict, sources: dict, probes: dict, used:
         if src not in probes:
             probes[src] = next(x for x in ff.probe(src)["streams"] if x["codec_type"] == "video")
         if convert.is_hdr(probes[src]):
-            a = max(0.0, s["in"] - MARGIN)
-            name = _hdr_segment(root, src, probes[src], a, s["out"] + MARGIN)
+            a = max(0.0, s["in"] - BEFORE - s.get("jcut", 0))  # J컷: 소리가 화면보다 먼저 시작
+            b = s["out"] + max(AFTER * max(1.0, avg_speed(s)), s.get("lcut", 0))
+            name = _hdr_segment(root, src, probes[src], a, b)
             used.add(name)
             s.update({"src": name, "in": round(s["in"] - a, 3), "out": round(s["out"] - a, 3)})
         else:

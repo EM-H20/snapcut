@@ -31,4 +31,5 @@ def freeze_stills(root: Path, fmt: str, shots: list[dict]) -> None:
         if s["type"] == "video" and s.get("freeze"):
             dst = root / mv.still(fmt, i)
             dst.parent.mkdir(exist_ok=True)
-            ff.run("-ss", f"{max(0.0, s['out'] - 1 / 30):.3f}", "-i", str(root / s["src"]), "-frames:v", "1", "-q:v", "2", str(dst))
+            # out 앞 0.5초를 읽어 마지막 프레임만 남긴다 (out이 파일 끝이면 out 바로 앞 시점도 마지막 프레임보다 늦을 수 있다)
+            ff.run("-ss", f"{max(0.0, s['out'] - 0.5):.3f}", "-t", "0.5", "-i", str(root / s["src"]), "-update", "1", "-q:v", "2", str(dst))

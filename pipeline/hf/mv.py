@@ -106,7 +106,7 @@ def _video_shot(i: int, s: dict, sp: dict, fmt: str, fps: int, w: int, h: int) -
         out.append(f'<img class="clip{"" if style else " contain"}" src="{still(fmt, i)}" data-start="{st}" data-duration="{du}" data-track-index="{i + 1}"{look}>')
     if split:  # J컷·L컷: 소리를 따로 꺼내 화면보다 먼저 시작하거나 늦게 끝낸다
         j, l = T.frame(s.get("jcut", 0), fps), T.frame(s.get("lcut", 0), fps)
-        st, du = T.window(f0 - j, f0 + n + l, fps)
+        st, du = T.window(f0 - j, f0 + n - hold + l, fps)  # 멈춘 화면에는 현장 소리가 없다 (L컷만큼만 이어짐)
         out.append(f'<audio id="a{i}" src="{attr(s["src"])}" data-start="{st}" data-duration="{du}" '
                    f'data-media-start="{max(0.0, s["in"] - j / fps):.6f}" data-volume="1" data-track-index="{i + 1}"></audio>')
     return "".join(out)
@@ -161,6 +161,9 @@ def _shot(i: int, s: dict, sp: dict, fmt: str, fps: int, w: int, h: int, js: lis
 def _transitions(i: int, s: dict, sp: dict, fps: int, h: int, js: list[str]) -> None:
     f0, n, tgt, px = sp["from"], sp["frames"], f"#s{i}", round(h / 36, 2)
     blur, sharp = f"blur({px}px)", "blur(0px)"
+    # 나가는 트윈은 같은 속성의 들어오는 트윈이 끝난 뒤 시작한다 — fromTo가 겹치면 탐색 순서에 따라 화면이 달라진다
+    room = max(0, n - max(sp["blurIn"], sp["whipIn"]))
+    sp = dict(sp, blurOut=min(sp["blurOut"], room), whipOut=min(sp["whipOut"], room))
     if sp["fadeIn"]:
         js.append(tween(tgt, {"opacity": 0}, {"opacity": 1}, sp["fadeIn"], f0, fps))
     if sp["wipeIn"]:
@@ -173,7 +176,7 @@ def _transitions(i: int, s: dict, sp: dict, fps: int, h: int, js: list[str]) -> 
         js.append(tween(tgt, {"xPercent": T.WHIP_SHIFT, "filter": blur}, {"xPercent": 0, "filter": sharp}, sp["whipIn"], f0, fps, "power2.out"))
     if sp["whipOut"]:
         js.append(tween(tgt, {"xPercent": 0, "filter": sharp}, {"xPercent": -T.WHIP_SHIFT, "filter": blur}, sp["whipOut"], f0 + n - sp["whipOut"], fps, "power2.in"))
-    fo = T.frame(s.get("fadeOut", 0), fps)
+    fo = min(T.frame(s.get("fadeOut", 0), fps), max(0, n - sp["fadeIn"]))
     if fo:  # 끝 페이드아웃: 마지막 프레임에서 0 (render/src tailOpacity)
         js.append(tween(tgt, {"opacity": 1}, {"opacity": 0}, max(1, fo - 1), f0 + n - fo, fps))
 

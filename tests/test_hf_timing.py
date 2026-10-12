@@ -119,3 +119,9 @@ def test_avg_speed():
     assert plan.avg_speed({}) == 1.0
     assert plan.avg_speed({"speed": 0.5}) == 0.5
     assert plan.avg_speed({"speed": [1, 0.5]}) == 0.75
+
+
+def test_music_returns_during_freeze_of_live_video():
+    frozen = dict(LIVE, start=5, end=10, freeze=1.0)  # 9~10초는 멈춘 화면 — 현장 소리가 없으니 음악이 돌아와야 한다
+    assert T.music_volume(9.5, [frozen], 20) == pytest.approx(1.0)
+    assert T.music_volume(9.5, [dict(frozen, lcut=0.6)], 20) == pytest.approx(T.DUCK)

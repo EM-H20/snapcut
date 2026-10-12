@@ -61,8 +61,19 @@ def place(items: list, beats: list[float], start: float, end: float, beats_per_p
             length = grid[j] - grid[i]
             hold = min(hold, length / 2)  # 멈춤은 장면의 절반까지만 (영상이 거의 안 보이는 장면 방지)
             used = (length - hold) * rate  # 원본에서 쓰는 길이
+            fit = 1.0
+            if used > it["duration"] and ("speed" in it or it.get("freeze")):
+                # 원본이 모자라면: 멈춤을 원한 영상은 남는 시간을 멈춤으로, 아니면 배속을 낮춰 원본 안에서 끝낸다
+                if it.get("freeze"):
+                    hold = length - it["duration"] / rate
+                else:
+                    fit = it["duration"] / used
+                used = it["duration"]
             vin = min(it["in"], max(0.0, it["duration"] - used))
             extra = {key: it[key] for key in VIDEO_KEYS if key in it}
+            if fit < 1:
+                sp = extra["speed"]
+                extra["speed"] = [x * fit for x in sp] if isinstance(sp, list) else sp * fit
             if hold:
                 extra["freeze"] = round(hold, 3)
             for key, room in (("jcut", min(vin, grid[i])), ("lcut", it["duration"] - (vin + used))):

@@ -66,7 +66,7 @@ def test_hdr_becomes_tonemapped_segment_of_used_range(proj):
     info = ff.probe(root / s["src"])
     v = next(x for x in info["streams"] if x["codec_type"] == "video")
     assert (v["width"], v["height"], v.get("color_transfer")) == (1280, 720, "bt709")  # 경량 사본(960)이 아닌 원본 해상도
-    assert float(info["format"]["duration"]) == pytest.approx(4.0, abs=0.1)  # 1.5~5.5초 (out + 1초 여유)
+    assert float(info["format"]["duration"]) == pytest.approx(4.5, abs=0.1)  # 1.5~6.0초 (out + 1.5초 여유 = 와이프 최대 길이, 파일 끝 6초)
 
 
 def test_heic_becomes_full_res_jpg(proj):
@@ -132,3 +132,11 @@ def test_clean_removes_conversions_keeps_links(proj):
     render_src.clean(root)
     assert not (root / "hdr").exists() and not (root / "heic").exists()
     assert (root / "src").is_symlink() and (root / "storyboard.json").exists()
+
+
+def test_hdr_segment_covers_jcut_before_in(proj):
+    sb = json.loads(proj.storyboard.read_text())
+    sb["formats"]["youtube"]["shots"][2]["jcut"] = 1.5  # 소리가 화면보다 1.5초 먼저 — 변환 구간이 그만큼 앞에서 시작해야 한다
+    proj.storyboard.write_text(json.dumps(sb))
+    s = _shots(render_src.build(proj, ["youtube"]))[2]
+    assert s["in"] == 2.5  # 구간 시작 = 2.5 - (1.0 + 1.5) = 0

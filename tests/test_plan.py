@@ -579,3 +579,13 @@ def test_effect_keys_pass_through_for_photo_and_video():
 def test_effect_validation_is_korean(item, msg):
     with pytest.raises(ValueError, match=msg):
         _resolve(item)
+
+
+def test_clamped_freeze_never_reads_past_source():
+    s = plan.place([_vid(**{"in": 0.0, "out": 2.0, "duration": 2.0}, freeze=3.0)], FX_BEATS, 0.0, 20.0, 4)[0][0]
+    assert s["out"] <= 2.0 and s["freeze"] == pytest.approx((s["end"] - s["start"]) - (s["out"] - s["in"]))
+
+
+def test_speedup_on_short_clip_slows_to_fit_source():
+    s = plan.place([_vid(**{"in": 0.0, "out": 1.5, "duration": 1.5}, speed=4)], FX_BEATS, 0.0, 20.0, 4)[0][0]
+    assert s["out"] <= 1.5 and s["speed"] < 4 and s["out"] - s["in"] == pytest.approx((s["end"] - s["start"]) * s["speed"])

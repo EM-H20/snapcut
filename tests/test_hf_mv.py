@@ -131,3 +131,22 @@ def test_credits_font_named_only_when_shipped():
     assert "SnapcutHand" not in mv.build(_sb(ALL), "youtube")
     html = mv.build(dict(_sb(ALL), font="fonts/hand.ttf"), "youtube")
     assert '@font-face{font-family:SnapcutHand;src:url("fonts/hand.ttf")}' in html and "font-family:SnapcutHand" in html
+
+
+def test_out_tweens_start_after_in_tweens_end():
+    # 같은 요소·속성에 나가는 트윈이 들어오는 트윈 안에서 시작하면 탐색 순서에 따라 화면이 달라진다 (GSAP fromTo 겹침)
+    shots = [{"type": "photo", "src": "a", "start": 0.0, "end": 2.0, "kenBurns": "still"},
+             {"type": "photo", "src": "b", "start": 2.0, "end": 2.4, "kenBurns": "still", "blur": 0.6},
+             {"type": "photo", "src": "c", "start": 2.4, "end": 4.0, "kenBurns": "still", "blur": 1.5},
+             {"type": "video", "src": "v", "start": 4.0, "end": 6.0, "in": 0, "out": 2, "liveAudio": False, "dissolve": 0.4, "fadeOut": 3.0}]
+    html = mv.build(_sb(shots), "youtube")
+    blur_out = re.search(r'tl\.fromTo\("#s1",\{"filter": "blur\(0px\)"[^;]*,(\d+\.\d+)\);', html).group(1)
+    fade_out = re.search(r'tl\.fromTo\("#s3",\{"opacity": 1\}[^;]*,(\d+\.\d+)\);', html).group(1)
+    assert float(blur_out) >= 2.3 - 1e-6 and float(fade_out) >= 4.4 - 1e-6
+
+
+def test_freeze_on_live_video_ends_split_sound_with_picture():
+    shot = {"type": "video", "src": "media/y.mp4", "start": 0.0, "end": 4.0, "in": 0.0, "out": 3.0, "liveAudio": True,
+            "freeze": 1.0, "lcut": 0.4}
+    html = mv.build(_sb([shot]), "youtube")
+    assert re.search(r'<audio id="a0" src="media/y.mp4" data-start="0.000000" data-duration="3.400000"', html)
