@@ -1,6 +1,6 @@
 # snapcut
 
-여행·행사 사진/영상 → 음악 비트에 맞춘 추억 뮤비. 사용은 `/snapcut <영상명>` 스킬로.
+영상 만들기 전부의 입구(추억 뮤비·롱폼·편집·홍보·애니메이션·웹). 사용은 `/snapcut <이름> <요청>`.
 
 ## 구조
 - `pipeline/` (Python): 변환·선별·분석·타임라인. `python -m pipeline <convert|prepare|plan|studio|render|music>`
@@ -12,6 +12,8 @@
 ## 명령
 - 테스트: `.venv/bin/python -m pytest` (빠름), `.venv/bin/python -m pytest -m slow` (렌더 E2E)
 - Remotion: `cd render && npm test && npm run typecheck`
+- 품질 점검: `.venv/bin/python -m pipeline check <이름> [mp4]` (render가 끝나면 자동), 음량: `pipeline master <mp4>`
+- 외부 키트: `.venv/bin/python -m pipeline kits` (kits.lock 커밋으로 kits/에 받기)
 
 ## 규칙
 - `영상소스/`에 쓰지 않는다.

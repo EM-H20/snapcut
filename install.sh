@@ -47,8 +47,12 @@ say "Python 패키지 설치 (.venv, $("$PY" --version))"
 say "Remotion 설치 (render/)"
 (cd render && npm install --no-audit --no-fund --loglevel=error)
 
-say "HyperFrames 내려받기 (인트로/아웃트로 카드용)"
-npx -y hyperframes@0.8.140 --version >/dev/null
+say "HyperFrames 내려받기 + 작업 스킬 설치"
+npx -y hyperframes@0.8.149 --version >/dev/null
+npx -y hyperframes@0.8.149 skills update music-to-video talking-head-recut embedded-captions faceless-explainer motion-graphics product-launch-video general-video
+
+say "외부 모션 키트 받기 (kits.lock)"
+.venv/bin/python -m pipeline kits
 
 say "Finder 빠른 동작 설치"
 .venv/bin/python tools/install_quick_action.py
