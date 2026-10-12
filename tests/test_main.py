@@ -271,3 +271,27 @@ def test_plan_longform_unknown_style_lists_choices(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
     with pytest.raises(SystemExit, match="흰바"):
         cli.main(["plan", str(proj.root)])
+
+
+def test_render_masters_then_checks_each_output(monkeypatch, tmp_path):
+    from pipeline import check, master, render_src
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps({"formats": {"youtube": {"shots": [{"type": "photo", "start": 0, "end": 2}]}}}))
+    monkeypatch.setattr(render_src, "build", lambda p, f: p.cache / "render")
+    monkeypatch.setattr(render_src, "clean", lambda root: None)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+
+    def fake_run(cmd, **kw):
+        proj.output.mkdir(exist_ok=True)
+        (proj.output / f"{proj.root.name}_youtube.mp4").write_bytes(b"x")
+        return type("R", (), {"returncode": 0})()
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    order = []
+    monkeypatch.setattr(master, "master", lambda p: order.append(("master", p.name)) or True)
+    monkeypatch.setattr(check, "check_file", lambda p, v, d: order.append(("check", p.name, v["duration"]))
+                        or {"ok": False, "issues": [{"detail": "x"}], "loudness": None, "sheets": []})
+    cli.main(["render", str(proj.root)])  # 점검 실패는 렌더 실패가 아니다 — 예외 없이 끝나고 알린다
+    name = f"{proj.root.name}_youtube.mp4"
+    assert order == [("master", name), ("check", name, 2)]
+    assert json.loads((proj.output / "check.json").read_text())[name]["ok"] is False

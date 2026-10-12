@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import check, contact, convert, curate, ff, highlights, intro, kits, longform, music, plan, render_src, template, transcribe
+from . import check, contact, convert, curate, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
 from .paths import ROOT, SHARED, Project, project
 
 RENDER_DIR = ROOT / "render"
@@ -218,7 +218,7 @@ def _safe(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\s]+', "_", name).strip("_") if name else ""
 
 
-def _render_one(proj: Project, comp: str, out: Path, captions: list[dict], props: dict | None = None) -> None:
+def _render_one(proj: Project, comp: str, out: Path, captions: list[dict], props: dict | None = None) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["npx", "remotion", "render", "src/index.ts", comp, str(out), f"--public-dir={proj.cache}"]
     if props is not None:
@@ -227,16 +227,19 @@ def _render_one(proj: Project, comp: str, out: Path, captions: list[dict], props
         raise SystemExit(f"{out.name} 렌더 실패")
     out.with_suffix(".srt").write_text(longform.srt(captions), encoding="utf-8")
     print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
+    return out
 
 
-def _render_longform(proj: Project, sb: dict, formats: list[str]) -> None:
+def _render_longform(proj: Project, sb: dict, formats: list[str]) -> list[Path]:
+    outs = []
     for f in formats:
         if f == "shorts":
             for i, s in enumerate(sb["formats"]["shorts"]):
                 name = "_".join(x for x in (proj.root.name, f"{i + 1:02d}", _safe(s["title"])) if x)
-                _render_one(proj, "shorts", proj.output / "shorts" / f"{name}.mp4", s["captions"], {"clip": i})
+                outs.append(_render_one(proj, "shorts", proj.output / "shorts" / f"{name}.mp4", s["captions"], {"clip": i}))
         else:
-            _render_one(proj, f, proj.output / f"{proj.root.name}_{f}.mp4", sb["formats"][f]["captions"])
+            outs.append(_render_one(proj, f, proj.output / f"{proj.root.name}_{f}.mp4", sb["formats"][f]["captions"]))
+    return outs
 
 
 def cmd_render(args) -> None:
@@ -249,16 +252,19 @@ def cmd_render(args) -> None:
         if f not in sb["formats"]:
             raise SystemExit(f"storyboard에 '{f}' 형식이 없습니다. selection.json의 formats에 넣고 plan을 다시 실행하세요.")
     if sb.get("mode") == "longform":
-        return _render_longform(proj, sb, formats)
+        return finish(proj, _render_longform(proj, sb, formats))
     public = render_src.build(proj, formats)  # 원본을 링크로 가리키는 렌더용 폴더 (Studio는 계속 .cache)
     proj.output.mkdir(exist_ok=True)
+    outs = []
     for f in formats:
         out = proj.output / f"{proj.root.name}_{f}.mp4"
+        outs.append(out)
         r = subprocess.run(["npx", "remotion", "render", "src/index.ts", f, str(out), f"--public-dir={public}"], cwd=RENDER_DIR)
         if r.returncode:
             raise SystemExit(f"{f} 렌더 실패")
         print(f"완성: {out}")
     render_src.clean(public)  # HDR·HEIC 변환본은 렌더가 끝나면 지운다
+    finish(proj, outs)
 
 
 def _mmss(sec: float) -> str:
@@ -294,6 +300,21 @@ def run_checks(proj: Project, files: list[Path], fmt: str | None = None) -> bool
     proj.output.mkdir(exist_ok=True)
     (proj.output / "check.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     return all(r["ok"] for r in results.values())
+
+
+def finish(proj: Project, outs: list[Path]) -> None:
+    """렌더 직후: 음량 마스터링 → 품질 점검. 점검 실패는 알리기만 한다 (파일은 남김)."""
+    outs = [o for o in outs if o.exists()]
+    for o in outs:
+        if master.master(o):
+            print(f"음량 마스터링: {o.name}")
+    if outs and not run_checks(proj, outs):
+        print("주의: 점검 실패 항목이 있습니다 — 완성이라고 하지 말고 위 항목부터 고치세요")
+
+
+def cmd_master(args) -> None:
+    f = Path(args.mp4).expanduser()
+    print(f"음량 마스터링: {f.name}" if master.master(f) else f"이미 기준 안: {f.name}")
 
 
 def cmd_check(args) -> None:
@@ -335,6 +356,8 @@ def main(argv=None) -> None:
     r.add_argument("--formats", default=None)
     sub.add_parser("music")
     sub.add_parser("kits")
+    ms = sub.add_parser("master")
+    ms.add_argument("mp4")
     ck = sub.add_parser("check")
     ck.add_argument("project")
     ck.add_argument("mp4", nargs="?", default=None, help="점검할 파일 (없으면 output/의 mp4 전부)")
@@ -346,7 +369,7 @@ def main(argv=None) -> None:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits, "check": cmd_check}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:
