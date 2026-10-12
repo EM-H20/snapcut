@@ -139,3 +139,10 @@ def test_plan_view_treats_credits_last_two_seconds_as_intended_black():
 def test_plan_view_ignores_list_formats_like_shorts():
     sb = {"mode": "longform", "formats": {"longform": {"duration": 40.0, "clips": []}, "shorts": [{"title": "a"}]}}
     assert check.plan_view(sb, "shorts") is None
+
+
+def test_freeze_tail_is_not_a_video_span():
+    sb = {"formats": {"youtube": {"shots": [
+        {"type": "video", "start": 0.0, "end": 4.0, "freeze": 1.5},
+        {"type": "video", "start": 4.0, "end": 6.0}]}}}
+    assert check.plan_view(sb, "youtube")["video_spans"] == [(0.0, 2.5), (4.0, 6.0)]

@@ -58,7 +58,7 @@ def plan_view(sb: dict | None, fmt: str | None) -> dict | None:
         if s["type"] == "credits":  # 크레딧은 마지막 2초를 항상 검게 덮는다 (render/src/CreditsShot)
             intended.append((round(s["end"] - CREDITS_FADE, 3), s["end"]))
     return {"duration": shots[-1]["end"], "cuts": [s["start"] for s in shots[1:]], "intended_black": intended,
-            "video_spans": [(s["start"], s["end"]) for s in shots if s["type"] == "video"]}
+            "video_spans": [(s["start"], round(s["end"] - s.get("freeze", 0), 3)) for s in shots if s["type"] == "video"]}
 
 
 def format_of(path: Path, sb: dict | None) -> str | None:

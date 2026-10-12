@@ -18,6 +18,8 @@ FORMATS = {
 DEFAULT_KEN_BURNS = "still"  # 기본은 멈춘 사진. 확대·이동은 어지럽다는 반응이라 지정한 사진만 움직인다
 KEN_BURNS_ANY = ["zoom-in", "zoom-out", "pan-left", "pan-right", "still", "scroll-down"]  # still: 멈춘 사진 (사진 피날레), scroll-down: 세로로 긴 사진(4컷) 확대해 위→아래
 SECTION_NAMES = ("브릿지", "브레이크", "마지막후렴", "피날레")  # {"at": 이름} 마커로 쓰는 곡 구간
+VIDEO_KEYS = ("rotate", "dissolve", "duck", "duckFade", "blur", "fadeOut", "speed", "whip", "wipe", "shake", "dutch")
+TRANSITIONS = ("dissolve", "blur", "whip", "wipe")  # 항목당 하나
 FINALE_BARS = 8  # 피날레 = 마지막후렴 + 이 마디 수 (selection "finaleBars"로 덮어씀)
 
 
@@ -49,17 +51,25 @@ def place(items: list, beats: list[float], start: float, end: float, beats_per_p
             shots.append({**{k: v for k, v in it.items() if k not in ("solo", "photoBeats", "span", "portrait")}, "start": grid[i], "end": grid[j],
                           "kenBurns": it.get("kenBurns") or DEFAULT_KEN_BURNS})
         else:
-            n = max(1, round((it["out"] - it["in"]) / interval))
+            rate, hold = avg_speed(it), it.get("freeze", 0.0)
+            n = max(1, round(((it["out"] - it["in"]) / rate + hold) / interval))
             if k > 0 and 2 * (len(grid) - 1 - i) < n:  # 남은 자리가 절반도 안 되면 잘라 넣지 않는다 (0.3초 번쩍 방지)
                 return shots, len(items) - k
             j = min(i + n, len(grid) - 1)
-            while j > i + 1 and grid[j] - grid[i] > it["duration"]:
+            while j > i + 1 and (grid[j] - grid[i] - hold) * rate > it["duration"]:
                 j -= 1
             length = grid[j] - grid[i]
-            vin = min(it["in"], max(0.0, it["duration"] - length))
+            hold = min(hold, length / 2)  # 멈춤은 장면의 절반까지만 (영상이 거의 안 보이는 장면 방지)
+            used = (length - hold) * rate  # 원본에서 쓰는 길이
+            vin = min(it["in"], max(0.0, it["duration"] - used))
+            extra = {key: it[key] for key in VIDEO_KEYS if key in it}
+            if hold:
+                extra["freeze"] = round(hold, 3)
+            for key, room in (("jcut", min(vin, grid[i])), ("lcut", it["duration"] - (vin + used))):
+                if it.get(key) and room > 0:
+                    extra[key] = round(min(it[key], room), 3)  # 소리가 원본 0초·영상 0초 밖으로 나가지 않게
             shots.append({"type": "video", "src": it["src"], "start": grid[i], "end": grid[j],
-                          "in": round(vin, 3), "out": round(vin + length, 3), "liveAudio": it["liveAudio"],
-                          **{key: it[key] for key in ("rotate", "dissolve", "duck", "duckFade", "blur", "fadeOut") if key in it}})
+                          "in": round(vin, 3), "out": round(vin + used, 3), "liveAudio": it["liveAudio"], **extra})
         i = j
     return shots, 0
 
@@ -192,6 +202,36 @@ def card_video(selection: dict, key: str, candidates: list[dict]) -> tuple[str, 
     return c["file"], vin
 
 
+def _seconds(sel: dict, k: int, key: str, lo: float, hi: float, what: str) -> float:
+    v = sel.get(key)
+    if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi):
+        raise ValueError(f"items[{k}]: {key}는 {lo:g}~{hi:g}초여야 합니다 ({what}): {v!r}")
+    return float(v) if v else 0.0
+
+
+def _rate_ok(x) -> bool:
+    return not isinstance(x, bool) and isinstance(x, (int, float)) and 0.25 <= x <= 10
+
+
+def _camera(sel: dict, k: int) -> dict:
+    """사진·영상 공통 효과: 휩 팬·와이프 전환, 핸드헬드 흔들림, 더치 앵글 (techniques.md)."""
+    out = {}
+    for key, lo, hi, what in (("whip", 0.2, 0.6, "빠르게 밀며 흐려지는 전환"), ("wipe", 0.3, 1.5, "경계가 왼쪽에서 오른쪽으로 밀며 바뀌는 전환")):
+        v = _seconds(sel, k, key, lo, hi, what)
+        if v:
+            out[key] = v
+    sh, du = sel.get("shake"), sel.get("dutch")
+    if sh is not None and (isinstance(sh, bool) or not isinstance(sh, (int, float)) or not 0 < sh <= 1):
+        raise ValueError(f"items[{k}]: shake는 0~1 사이 흔들림 세기여야 합니다 (0.3 = 살짝, 1 = 크게): {sh!r}")
+    if du is not None and (isinstance(du, bool) or not isinstance(du, (int, float)) or not 0 < abs(du) <= 15):
+        raise ValueError(f"items[{k}]: dutch는 -15~15도(0 제외) 기울기여야 합니다: {du!r}")
+    if sh:
+        out["shake"] = float(sh)
+    if du:
+        out["dutch"] = float(du)
+    return out
+
+
 def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> list[dict]:
     raw = selection.get("items", [])
     if not (isinstance(raw, list) and all(isinstance(s, dict) for s in raw)):
@@ -238,6 +278,9 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             raise ValueError(f"items[{k}]: blur는 0~1.5초여야 합니다 (앞 장면에서 흐려졌다 선명해지는 전환 길이): {blur!r}")
         if blur:
             fade["blur"] = float(blur)
+        fade.update(_camera(sel, k))
+        if sum(t in fade for t in TRANSITIONS) > 1:
+            raise ValueError(f"items[{k}]: 전환은 dissolve·blur·whip·wipe 중 하나만 쓸 수 있습니다")
         if c["type"] == "photo":
             kb = sel.get("kenBurns")
             if kb is not None and kb not in KEN_BURNS_ANY:
@@ -270,6 +313,22 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
         rot = sel.get("rotate")
         if rot is not None and rot not in (90, -90, 180):
             raise ValueError(f"items[{k}]: rotate는 90, -90, 180 중 하나여야 합니다 (옆으로 찍힌 영상 바로 세우기): {rot!r}")
+        sp = sel.get("speed")
+        if sp is not None and not (_rate_ok(sp) or (isinstance(sp, list) and len(sp) == 2 and all(_rate_ok(x) for x in sp))):
+            raise ValueError(f"items[{k}]: speed는 0.25~10 배속이나 [시작, 끝] 두 배속이어야 합니다 (0.5 = 슬로 모션, 4 = 빨리 감기, [1, 0.3] = 스피드 램프): {sp!r}")
+        if sp is not None and sp != 1:
+            fade["speed"] = [float(x) for x in sp] if isinstance(sp, list) else float(sp)
+        fz = _seconds(sel, k, "freeze", 0.3, 3.0, "영상 끝 장면을 멈춰 보여 주는 길이")
+        if fz:
+            fade["freeze"] = fz
+        for key, what in (("jcut", "다음 장면 소리가 먼저 들리는 길이"), ("lcut", "장면이 바뀐 뒤에도 소리가 이어지는 길이")):
+            v = _seconds(sel, k, key, 0.2, 2.0, what)
+            if v and not live:
+                raise ValueError(f"items[{k}]: {key}는 현장 소리를 켠 영상(liveAudio)에만 쓸 수 있습니다")
+            if v and "speed" in fade:
+                raise ValueError(f"items[{k}]: 속도를 바꾼 영상에는 {key}를 쓸 수 없습니다 (소리와 화면 속도가 달라짐)")
+            if v:
+                fade[key] = v
         items.append({"type": "video", "src": c["file"], "in": vin, "out": vout,
                       "duration": c["duration"], "liveAudio": live, **({"rotate": rot} if rot else {}), **fade,
                       **({} if duck is True else {"duck": float(duck)} if duck and duck is not True else {"duck": False})})

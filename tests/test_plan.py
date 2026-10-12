@@ -516,3 +516,66 @@ def test_outro_dissolve_crossfades_last_scene_into_card():
     shots = build_format("youtube", [photo(i) for i in range(4)], MUSIC, CARDS, outro_dissolve=1.5)["shots"]
     assert shots[-1]["dissolve"] == 1.5
     assert "dissolve" not in build_format("youtube", [photo(i) for i in range(4)], MUSIC, CARDS)["shots"][-1]
+
+
+from pipeline import plan  # noqa: E402
+
+FX_BEATS = [k * 0.5 for k in range(41)]  # 0~20초, 0.5초 격자
+
+
+def _vid(**kw):
+    return {"type": "video", "src": "media/v.mp4", "in": 1.0, "out": 3.0, "duration": 10.0, "liveAudio": True, **kw}
+
+
+def test_slow_motion_takes_twice_the_timeline():
+    shots, _ = plan.place([_vid(speed=0.5)], FX_BEATS, 0.0, 20.0, 4)
+    s = shots[0]
+    assert s["end"] - s["start"] == 4.0 and (s["in"], s["out"]) == (1.0, 3.0) and s["speed"] == 0.5
+
+
+def test_speed_ramp_uses_average_rate():
+    s = plan.place([_vid(speed=[1.0, 0.5])], FX_BEATS, 0.0, 20.0, 4)[0][0]
+    assert s["end"] - s["start"] == 2.5 and s["out"] == pytest.approx(1.0 + 2.5 * 0.75)
+
+
+def test_freeze_adds_hold_after_video():
+    s = plan.place([_vid(freeze=1.0)], FX_BEATS, 0.0, 20.0, 4)[0][0]
+    assert s["end"] - s["start"] == 3.0 and s["out"] == 3.0 and s["freeze"] == 1.0
+
+
+def test_speed_near_source_end_pulls_in_back():
+    s = plan.place([_vid(**{"in": 9.0, "out": 10.0}, speed=0.25)], FX_BEATS, 0.0, 20.0, 4)[0][0]
+    assert s["out"] <= 10.0 and s["out"] - s["in"] == pytest.approx((s["end"] - s["start"]) * 0.25)
+
+
+def test_jcut_clamped_by_in_and_start():
+    s = plan.place([_vid(jcut=2.0, lcut=0.5)], FX_BEATS, 2.0, 20.0, 4)[0][0]
+    assert s["jcut"] == 1.0 and s["lcut"] == 0.5  # in 1초 앞까지만
+    s = plan.place([_vid(**{"in": 3.0, "out": 5.0}, jcut=1.5)], FX_BEATS, 0.5, 20.0, 4)[0][0]
+    assert s["jcut"] == 0.5  # 장면이 0.5초에 시작하면 소리는 0초 앞으로 못 간다
+
+
+def _resolve(item, video=True):
+    cands = [{"file": "media/v.mp4", "type": "video", "duration": 10.0, "has_audio": True}] if video else \
+        [{"file": "media/p.jpg", "type": "photo", "width": 4, "height": 3}]
+    return plan.resolve_items({"items": [{"id": 0, **item}]}, cands, {})[0]
+
+
+def test_effect_keys_pass_through_for_photo_and_video():
+    p = _resolve({"whip": 0.4, "shake": 0.5, "dutch": -8}, video=False)
+    assert (p["whip"], p["shake"], p["dutch"]) == (0.4, 0.5, -8.0)
+    v = _resolve({"wipe": 0.6, "speed": [1, 0.3], "freeze": 1.0})
+    assert (v["wipe"], v["speed"], v["freeze"]) == (0.6, [1.0, 0.3], 1.0)
+    assert _resolve({"jcut": 0.5, "lcut": 0.3, "liveAudio": True})["jcut"] == 0.5
+
+
+@pytest.mark.parametrize("item, msg", [
+    ({"speed": 0.1}, "speed"), ({"speed": [1]}, "speed"), ({"speed": True}, "speed"),
+    ({"whip": 1.0}, "whip"), ({"wipe": 0.1}, "wipe"), ({"freeze": 5}, "freeze"),
+    ({"shake": 2}, "shake"), ({"dutch": 30}, "dutch"), ({"dutch": 0}, "dutch"),
+    ({"dissolve": 0.5, "whip": 0.3}, "하나만"), ({"jcut": 0.5, "liveAudio": False}, "liveAudio"),
+    ({"lcut": 0.5, "liveAudio": True, "speed": 0.5}, "속도"),
+])
+def test_effect_validation_is_korean(item, msg):
+    with pytest.raises(ValueError, match=msg):
+        _resolve(item)
