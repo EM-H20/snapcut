@@ -12,6 +12,7 @@ FRAME = 1 / 30
 LUFS_RANGE = (-15.0, -13.0)
 MAX_TRUE_PEAK = -1.0
 DURATION_TOLERANCE = 0.1
+CREDITS_FADE = 2.0
 EDGE_SECONDS = 2.0  # 계획이 없을 때 처음·끝 이만큼의 검정은 페이드로 본다
 STILL_OFFSET = 0.3
 SHEET_COLS, SHEET_ROWS, CELL_W = 4, 3, 480
@@ -44,6 +45,8 @@ def plan_view(sb: dict | None, fmt: str | None) -> dict | None:
     if not sb or fmt not in sb.get("formats", {}):
         return None
     f = sb["formats"][fmt]
+    if not isinstance(f, dict):
+        return None  # 롱폼 shorts는 클립별 목록 — 형식 하나의 계획이 아니다
     if sb.get("mode") == "longform":
         return {"duration": f["duration"], "cuts": [c["start"] for c in f["clips"][1:]], "intended_black": [], "video_spans": []}
     shots = f["shots"]
@@ -52,6 +55,8 @@ def plan_view(sb: dict | None, fmt: str | None) -> dict | None:
         if s.get("fadeOut"):
             nxt = shots[i + 1].get("dissolve", 0) if i + 1 < len(shots) else 0
             intended.append((round(s["end"] - s["fadeOut"], 3), round(s["end"] + nxt, 3)))
+        if s["type"] == "credits":  # 크레딧은 마지막 2초를 항상 검게 덮는다 (render/src/CreditsShot)
+            intended.append((round(s["end"] - CREDITS_FADE, 3), s["end"]))
     return {"duration": shots[-1]["end"], "cuts": [s["start"] for s in shots[1:]], "intended_black": intended,
             "video_spans": [(s["start"], s["end"]) for s in shots if s["type"] == "video"]}
 

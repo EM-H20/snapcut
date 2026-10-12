@@ -125,3 +125,17 @@ def test_check_file_finds_mid_black_on_real_ffmpeg(tmp_path):
     assert abs(r["issues"][0]["at"] - 3.0) < 0.05
     assert r["loudness"] is None  # 오디오 없음
     assert r["sheets"] and all(p.endswith(".jpg") for p in r["sheets"])
+
+
+def test_plan_view_treats_credits_last_two_seconds_as_intended_black():
+    sb = {"formats": {"youtube": {"shots": [
+        {"type": "photo", "start": 0.0, "end": 170.0},
+        {"type": "credits", "src": "m.mp4", "in": 0, "out": 17.5, "start": 170.0, "end": 187.5, "lines": [], "liveAudio": True}]}}}
+    v = check.plan_view(sb, "youtube")
+    assert v["intended_black"] == [(185.5, 187.5)]
+    assert check.judge([(187.233, 187.5)], [], GOOD_LOUD, INFO | {"duration": 187.5}, v) == []
+
+
+def test_plan_view_ignores_list_formats_like_shorts():
+    sb = {"mode": "longform", "formats": {"longform": {"duration": 40.0, "clips": []}, "shorts": [{"title": "a"}]}}
+    assert check.plan_view(sb, "shorts") is None
