@@ -86,9 +86,10 @@ class WhisperCli:
             raise RuntimeError("whisper-cli를 찾을 수 없습니다. `brew install whisper-cpp`(또는 ./install.sh)를 실행하세요.")
         return cls(binary, str(models / f"ggml-{model_size()}.bin"), str(models / VAD_MODEL_FILE))
 
-    def transcribe(self, wav: Path, language: str = "ko") -> list[Segment]:
-        segments = self._segments(self._run(wav, ["-mc", "0", "-l", language]))
-        return self._resolve_repetitions(segments, wav, language)
+    def transcribe(self, wav: Path, language: str = "ko", words: bool = False) -> list[Segment]:
+        """words=True: 단어(어절) 하나가 한 Segment. 문장 반복 검사는 단어에 맞지 않아 건너뛴다(말더듬은 edit의 실수 컷이 잡는다)."""
+        segments = self._segments(self._run(wav, ["-mc", "0", "-l", language, *(["-ml", "1", "-sow"] if words else [])]))
+        return segments if words else self._resolve_repetitions(segments, wav, language)
 
     def _run(self, wav: Path, extra_args: list[str]) -> dict:
         with tempfile.TemporaryDirectory() as tmp:

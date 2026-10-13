@@ -140,3 +140,11 @@ def test_from_env_missing_binary_explains_install(monkeypatch, tmp_path):
     monkeypatch.setattr(whisper.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="brew install whisper-cpp"):
         WhisperCli.from_env(tmp_path)
+
+
+def test_words_mode_splits_per_word_and_skips_loop_retry(wav):
+    e, run = engine(looping())  # 단어 단위면 같은 '단어'가 이어지는 건 반복 루프가 아니다
+    segs = e.transcribe(wav, words=True)
+    assert len(segs) == 4 and len(run.calls) == 1
+    args = run.calls[0]
+    assert args[args.index("-ml") + 1] == "1" and "-sow" in args
