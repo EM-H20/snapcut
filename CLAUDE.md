@@ -5,6 +5,7 @@
 ## 구조
 - `pipeline/` (Python): 변환·선별·분석·타임라인. `python -m pipeline <convert|prepare|plan|edit|words|capture|studio|render|music>`
 - `pipeline/edit.py`: edit 모드 — whisper 단어 전사 → student-kit 컷 스크립트(kits/) → `work/edit/` 구성 (hyperframes@0.7.109)
+- `pipeline/sound.py`: 뮤비 효과음 줄기 (claude-motion 키트 합성기, `effects.sfx`)
 - `pipeline/capture.py`: `window.seek` 페이지 → mp4 (Playwright, `.[promo]`)
 - `pipeline/hf/`: storyboard → HyperFrames 구성 HTML(뮤비·롱폼·쇼츠)과 렌더·미리보기 실행 (hyperframes@0.8.149)
 - `공용/음악/` 곡 라이브러리(git 제외), `공용/인트로아웃트로/<템플릿>/` HyperFrames 카드
