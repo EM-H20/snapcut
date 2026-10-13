@@ -355,3 +355,14 @@ def test_edit_reports_cut_and_next_step(monkeypatch, tmp_path, capsys):
     assert seen == {"file": "talk.mov", "track": 2}
     assert "1:05 → 0:52" in out and "실수 후보 2개" in out
     assert "approved-cuts.json" in out and "--cuts" in out
+
+
+def test_edit_cuts_applies_and_points_to_studio(monkeypatch, tmp_path, capsys):
+    from pipeline import edit
+    (tmp_path / "영상소스").mkdir()
+    monkeypatch.setattr(edit, "prepare", lambda *a, **k: pytest.fail("--cuts는 prepare를 다시 돌리지 않는다"))
+    monkeypatch.setattr(edit, "apply", lambda proj: {"duration": 50.2, "cuts": 3, "created": True})
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["edit", str(tmp_path), "--cuts"])
+    out = capsys.readouterr().out
+    assert "3구간" in out and "0:50" in out and "index.html" in out and "studio" in out

@@ -306,6 +306,13 @@ def cmd_transcribe(args) -> None:
 
 def cmd_edit(args) -> None:
     proj = project(args.project)
+    if args.cuts:
+        r = edit.apply(proj)
+        index = edit.work(proj) / "index.html"
+        print(f"실수 컷 {r['cuts']}구간 적용: {_mmss(r['duration'])} — {edit.assets(proj) / 'clean.mp4'}")
+        print(f"{'시작 구성을 만들었습니다' if r['created'] else '기존 구성을 그대로 둡니다'}: {index}")
+        print(f"다음: 오버레이를 {index.name}에 쓰고 `python -m pipeline studio {proj.root.name}`로 확인")
+        return
     r = edit.prepare(proj, args.file, int(args.track))
     a = edit.assets(proj)
     print(f"무음 컷: {r['source']} {_mmss(r['source_duration'])} → {_mmss(r['edited_duration'])} (단어 {r['words']}개)")
@@ -383,6 +390,7 @@ def main(argv=None) -> None:
     ed.add_argument("project")
     ed.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
     ed.add_argument("--track", default="1", help="목소리 오디오 트랙 번호 (1부터)")
+    ed.add_argument("--cuts", action="store_true", help="approved-cuts.json을 적용해 clean.mp4와 시작 구성을 만든다")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)

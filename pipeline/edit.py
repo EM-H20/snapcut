@@ -3,11 +3,14 @@
 키트 형식(words[{text,start,end}], 초)으로 쓴다."""
 import hashlib
 import json
+import math
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
-from . import convert, ff, kits, transcribe
+from . import convert, ff, kits, longform, transcribe
+from .hf import mv
 from .paths import Project
 from .whisper import Segment, WhisperCli, model_size
 
@@ -18,6 +21,8 @@ APPLY_CUTS = KIT / ".claude/skills/cut-mistakes/scripts/apply-cuts.mjs"
 WORDS_VERSION = 1  # raw.json 만드는 방식이 바뀌면 올린다 — 다시 전사
 SILENCE_FILTER = "silencedetect=noise=-35dB:d=0.3"  # ponytail: 고정 문턱, 잡음 큰 녹음에서 무음을 못 찾으면 조절
 STUTTER_GAP = 0.5  # 키트 find-cut-candidates와 같은 값
+FPS = 30
+MAX_SIDE = 1920  # 구성 크기 상한 — 4K 원본도 1080p 급으로 렌더
 BT709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
 LANGUAGE = "ko"
 SILENCE_RE = re.compile(r"silence_(start|end): (-?[\d.]+)")
@@ -167,3 +172,53 @@ def prepare(proj: Project, file: str | None = None, track: int = 1, engine_facto
                                        encoding="utf-8")
     return {"source": src.name, "words": len(silenced), "source_duration": edl["source_duration"],
             "edited_duration": edl["edited_duration"], "candidates": found}
+
+
+def starter(w: int, h: int, duration: float) -> str:
+    """키트 방식 시작 구성: 시간 없는 감싸개 안 muted 영상 + 같은 파일의 소리. 오버레이는 Claude가 이 아래에 쓴다."""
+    k = min(1.0, MAX_SIDE / max(w, h))
+    w, h = round(w * k / 2) * 2, round(h * k / 2) * 2
+    d = repr(math.floor(duration * FPS) / FPS)
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<script src="{mv.GSAP}"></script>
+<style>
+html, body {{ margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }}
+#edit {{ position: relative; width: 100%; height: 100%; overflow: hidden; background: #000; }}
+#footage {{ position: absolute; inset: 0; }}
+#footage video {{ width: 100%; height: 100%; object-fit: cover; }}
+</style></head><body>
+<div id="edit" data-composition-id="edit" data-start="0" data-width="{w}" data-height="{h}" data-duration="{d}">
+<div id="footage"><video id="clean" src="assets/clean.mp4" data-start="0" data-duration="{d}" data-track-index="0" muted playsinline></video></div>
+<audio id="clean-audio" src="assets/clean.mp4" data-start="0" data-duration="{d}" data-track-index="1"></audio>
+<!-- 오버레이: 키트 hyperframes-video-beats 규칙대로 이 아래에 (시간은 assets/transcript.json 기준) -->
+</div>
+<script>
+const tl = gsap.timeline({{paused: true}});
+window.__timelines = window.__timelines || {{}};
+window.__timelines["edit"] = tl;
+</script></body></html>
+"""
+
+
+def apply(proj: Project) -> dict:
+    """approved-cuts.json(silenced.mp4 기준 초)을 키트로 잘라 clean.mp4·transcript.json·clean.srt, 없으면 시작 index.html."""
+    a = assets(proj)
+    if not (a / "raw.silence-transcript.json").exists():
+        raise RuntimeError(f"먼저 `python -m pipeline edit {proj.root.name}`를 실행하세요")
+    cuts = a / "approved-cuts.json"
+    if not cuts.exists():
+        raise RuntimeError(f'{cuts}이(가) 없습니다 — candidates.json을 보고 자를 구간을 쓰세요 (자를 게 없으면 {{"cuts": []}})')
+    _node(APPLY_CUTS, a / "raw.silence-transcript.json", "--cuts", cuts, "--video", a / "silenced.mp4",
+          "--out-dir", a, "--output", a / "clean.mp4", "--apply")
+    shutil.copyfile(a / "raw.mistakes-transcript.json", a / "transcript.json")  # 키트 validate-beat-sync가 읽는 이름
+    words = json.loads((a / "transcript.json").read_text(encoding="utf-8"))["words"]
+    (a / "clean.srt").write_text(longform.srt(cues(words)), encoding="utf-8")
+    info = ff.probe(a / "clean.mp4")
+    v = next(s for s in info["streams"] if s["codec_type"] == "video")
+    duration = float(info["format"]["duration"])
+    index = work(proj) / "index.html"
+    created = not index.exists()
+    if created:
+        index.write_text(starter(v["width"], v["height"], duration), encoding="utf-8")
+    return {"duration": duration, "cuts": len(json.loads(cuts.read_text(encoding="utf-8"))["cuts"]), "created": created}

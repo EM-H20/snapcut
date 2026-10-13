@@ -110,3 +110,36 @@ def test_prepare_rejects_missing_track(tmp_path):
     proj = _talk_project(tmp_path)
     with pytest.raises(ValueError, match="트랙 3"):
         edit.prepare(proj, track=3, engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
+
+
+def test_starter_fits_long_side_and_floors_to_frames():
+    page = edit.starter(3840, 2160, 5.4321)
+    assert 'data-width="1920" data-height="1080"' in page
+    assert 'data-duration="5.4"' in page  # 162프레임
+    assert '<video id="clean" src="assets/clean.mp4"' in page and "muted" in page
+    assert '<audio id="clean-audio" src="assets/clean.mp4"' in page
+    assert 'data-width="1080" data-height="1920"' in edit.starter(1080, 1920, 3.0)
+
+
+def test_apply_needs_prepare_first(tmp_path):
+    with pytest.raises(RuntimeError, match="pipeline edit"):
+        edit.apply(Project(tmp_path))
+
+
+@needs_kit
+def test_apply_cuts_writes_transcript_srt_and_keeps_existing_index(tmp_path):
+    proj = _talk_project(tmp_path)
+    r = edit.prepare(proj, engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
+    a = edit.assets(proj)
+    with pytest.raises(RuntimeError, match='{"cuts": \\[\\]}'):
+        edit.apply(proj)
+    k = r["candidates"][0]["cut"]
+    (a / "approved-cuts.json").write_text(json.dumps({"cuts": [{**k, "reason": "말더듬"}]}), encoding="utf-8")
+    out = edit.apply(proj)
+    words = json.loads((a / "transcript.json").read_text(encoding="utf-8"))["words"]
+    assert [w["text"] for w in words] == ["오늘은", "산에", "갑니다."]
+    assert "오늘은 산에" in (a / "clean.srt").read_text(encoding="utf-8")
+    assert out["created"] and (edit.work(proj) / "index.html").exists()
+    (edit.work(proj) / "index.html").write_text("mine", encoding="utf-8")
+    assert not edit.apply(proj)["created"]
+    assert (edit.work(proj) / "index.html").read_text(encoding="utf-8") == "mine"
