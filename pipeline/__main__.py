@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import capture, check, contact, convert, curate, edit, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
+from . import capture, check, contact, convert, curate, edit, ff, highlights, intro, kits, longform, master, music, plan, render_src, sound, template, transcribe
 from .hf import engine, long as hf_long, mv
 from .paths import SHARED, Project, project
 
@@ -185,6 +185,7 @@ def cmd_plan(args) -> None:
                  "outro": _card(proj, card_tpl, f, sel.get("ending", ""), "", outro_video, exit=True, layout=outro_layout)}
              for f in formats if f in plan.FORMATS}
     sb = plan.build_storyboard(sel, cands, hl, analysis, music_src, cards)
+    _effect_audio(proj, sb)
     if sel.get("credits") and CREDITS_FONT.exists():
         (proj.cache / "fonts").mkdir(exist_ok=True)
         shutil.copyfile(CREDITS_FONT, proj.cache / "fonts" / CREDITS_FONT.name)
@@ -197,6 +198,16 @@ def cmd_plan(args) -> None:
     print(section_report(sb["sections"]))
     if sb["sections"]["ignored"]:
         print(f"  놓을 수 없어 무시한 마커(곡 밖이거나 앞 마커보다 이름): {', '.join(sb['sections']['ignored'])}")
+
+
+def _effect_audio(proj: Project, sb: dict) -> None:
+    """effects.sfx: 형식마다 효과음 줄기 wav를 .cache/music/에 (미리보기·렌더 모두 music/로 닿는다)."""
+    if not sb.get("effects", {}).get("sfx"):
+        return
+    for f, p in sb["formats"].items():
+        name = f"sfx_{f}.wav"
+        sound.render_sfx(p["cues"], p["musicEnd"] - p["musicStart"], proj.cache / "music" / name)
+        p["sfx"] = f"music/{name}"
 
 
 def section_report(sec: dict) -> str:

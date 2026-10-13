@@ -459,3 +459,19 @@ def test_capture_command_accepts_site_folder(monkeypatch, tmp_path):
     (tmp_path / "site").mkdir()
     cli.main(["capture", str(tmp_path / "site"), str(tmp_path / "o.mp4"), "--seconds", "1"])
     assert seen == [tmp_path / "site"]
+
+
+def test_effect_audio_writes_one_stem_per_format(monkeypatch, tmp_path):
+    from pipeline import sound
+    proj = Project(tmp_path)
+    calls = []
+    monkeypatch.setattr(sound, "render_sfx", lambda cues, dur, path: calls.append((cues["drop"], dur, path)))
+    cues = {"transitions": [], "accents": [], "drop": 9.0}
+    sb = {"effects": {"sfx": True}, "formats": {"youtube": {"musicStart": 0.0, "musicEnd": 30.0, "cues": cues},
+                                                 "reels": {"musicStart": 60.0, "musicEnd": 75.5, "cues": cues}}}
+    cli._effect_audio(proj, sb)
+    assert calls == [(9.0, 30.0, proj.cache / "music" / "sfx_youtube.wav"), (9.0, 15.5, proj.cache / "music" / "sfx_reels.wav")]
+    assert sb["formats"]["reels"]["sfx"] == "music/sfx_reels.wav"
+    calls.clear()
+    cli._effect_audio(proj, {"effects": {"filmLook": True}, "formats": {"youtube": {"cues": cues}}})
+    assert calls == []
