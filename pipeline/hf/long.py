@@ -1,4 +1,4 @@
-"""롱폼·쇼츠 storyboard → HyperFrames 구성 HTML (render/src/Longform.tsx 이식).
+"""롱폼·쇼츠 storyboard → HyperFrames 구성 HTML.
 원본 한 파일에서 고른 구간을 이어 붙이고 소리는 원본 그대로. 쇼츠는 같은 구간을 흐린 배경으로 깔고 가운데 원본."""
 from . import captions, mv
 from . import timing as T

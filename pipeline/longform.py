@@ -13,7 +13,7 @@ MIN_VISIBLE = 0.2  # 클립 경계에 걸려 이보다 짧게 보일 자막은 �
 STYLES_DIR = SHARED / "자막"  # 자막바·말풍선 스타일 (공용, git 포함)
 DEFAULT_STYLE = "둥글배그"
 ICON_CHARS = 4  # 아이콘 있는 스타일(빨강정보)은 자막바 한 줄에서 약 2글자를 아이콘이 차지 → 한 장에서 4자 덜
-# chars = 자막 한 장(2줄) 최대 글자 수 — CaptionLayer.tsx의 폭·글자 크기와 짝 (bar: 자막바, bubble: 말풍선)
+# chars = 자막 한 장(2줄) 최대 글자 수 — hf/captions.py의 폭·글자 크기와 짝 (bar: 자막바, bubble: 말풍선)
 FORMATS = {"longform": {"width": 1920, "height": 1080, "chars": {"bar": 40, "bubble": 30}},
            "shorts": {"width": 1080, "height": 1920, "chars": {"bar": 22, "bubble": 22}}}
 

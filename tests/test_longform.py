@@ -168,7 +168,7 @@ def test_clip_shorter_than_a_frame_is_rejected(tmp_path):
 
 
 def test_caption_chars_fit_two_lines():
-    """CaptionLayer.tsx와 같은 치수: 폭 비율 × 화면 − 좌우 여백(글자 크기 배수) − 이름 칸, 글자 크기로 나눈 줄당 글자 × 2줄."""
+    """hf/captions.py와 같은 치수: 폭 비율 × 화면 − 좌우 여백(글자 크기 배수) − 이름 칸, 글자 크기로 나눈 줄당 글자 × 2줄."""
     def two_lines(box, size, pad, name=0.0):
         return 2 * int((box - 2 * pad * size - name * size) / size)
 

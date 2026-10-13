@@ -31,7 +31,7 @@
     const tl = gsap.timeline({ paused: true });
     tl.from("#text", { opacity: 0, y: 40, duration: 0.8 }, 0.2)
       .from("#sub", { opacity: 0, y: 20, duration: 0.6 }, 0.6);
-    // 아웃트로: 글씨가 먼저 사라지고, 그다음 화면이 어두워진다 (화면 페이드는 Remotion ClipShot fadeOut 2초 = 9초부터)
+    // 아웃트로: 글씨가 먼저 사라지고, 그다음 화면이 어두워진다 (화면 페이드는 렌더의 fadeOut 2초 = 9초부터)
     if (exit) tl.to(["#text", "#sub"], { opacity: 0, duration: 0.8 }, 8.0);
     window.__timelines = window.__timelines || {};
     window.__timelines.card = tl;

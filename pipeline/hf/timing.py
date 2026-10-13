@@ -1,4 +1,4 @@
-"""storyboard 시각 → HyperFrames 속성·트윈 값. 결정적 계산만 (render/src의 span·duck·kenburns·collage·creditsRoll·shotLabel 이식)."""
+"""storyboard 시각 → HyperFrames 속성·트윈 값. 결정적 계산만."""
 import math
 import re
 
@@ -84,7 +84,7 @@ def duck_lane(shots: list[dict], total: float, fade_end: float, step: float = 0.
 
 _KB = {"zoom-in": ((1.0, 0, 0), (1.1, 0, 0)), "zoom-out": ((1.1, 0, 0), (1.0, 0, 0)),
        "pan-left": ((1.08, 2, 0), (1.08, -2, 0)), "pan-right": ((1.08, -2, 0), (1.08, 2, 0)),
-       "scroll-down": ((2.5, 0, 30), (2.5, 0, -30))}  # (배율, 가로 %, 세로 %) — render/src/kenburns.ts
+       "scroll-down": ((2.5, 0, 30), (2.5, 0, -30))}  # (배율, 가로 %, 세로 %)
 
 
 def kenburns(kind: str) -> tuple[dict, dict] | None:

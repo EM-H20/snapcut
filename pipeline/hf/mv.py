@@ -1,4 +1,4 @@
-"""추억 뮤비 storyboard 한 형식 → HyperFrames 구성 HTML. render/src(Remotion)와 같은 화면 + 카메라·전환 효과.
+"""추억 뮤비 storyboard 한 형식 → HyperFrames 구성 HTML. 사진·영상·콜라주·크레딧 + 카메라·전환 효과.
 층: #sN(전환: 투명도·블러·휩·와이프) > #sN-k(켄 번스) > #sN-h(흔들림) > 더치 앵글(고정 CSS) > 사진/영상.
 영상은 <video>에 시간을 두고 바깥 #sN은 시간 없는 껍데기 — 시간 있는 요소 안의 영상은 HF가 엉뚱한 프레임을 보여 준다."""
 import html
@@ -69,7 +69,7 @@ def _video(id_: str, src: str, f0: int, f1: int, fps: int, media_in: float, trac
 
 
 def _rotated(rot, w: int, h: int) -> str:
-    """옆으로 찍힌 영상: 돌린 뒤 화면에 맞도록 가로·세로 크기를 바꿔 잡는다 (render/src/VideoShot)."""
+    """옆으로 찍힌 영상: 돌린 뒤 화면에 맞도록 가로·세로 크기를 바꿔 잡는다."""
     if not rot:
         return ""
     vw, vh = (h, w) if abs(rot) == 90 else (w, h)
@@ -177,7 +177,7 @@ def _transitions(i: int, s: dict, sp: dict, fps: int, h: int, js: list[str]) -> 
     if sp["whipOut"]:
         js.append(tween(tgt, {"xPercent": 0, "filter": sharp}, {"xPercent": -T.WHIP_SHIFT, "filter": blur}, sp["whipOut"], f0 + n - sp["whipOut"], fps, "power2.in"))
     fo = min(T.frame(s.get("fadeOut", 0), fps), max(0, n - sp["fadeIn"]))
-    if fo:  # 끝 페이드아웃: 마지막 프레임에서 0 (render/src tailOpacity)
+    if fo:  # 끝 페이드아웃: 마지막 프레임에서 0
         js.append(tween(tgt, {"opacity": 1}, {"opacity": 0}, max(1, fo - 1), f0 + n - fo, fps))
 
 

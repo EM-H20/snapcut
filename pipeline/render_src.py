@@ -1,4 +1,4 @@
-"""Remotion 렌더용 public 폴더(.cache/render). 원본은 복사하지 않고 링크로 가리킨다.
+"""HyperFrames 렌더용 미디어 폴더(.cache/render). 원본은 복사하지 않고 링크로 가리킨다.
 원본을 그대로 못 쓰는 것만, 쓰는 구간만 변환한다: HDR 영상(Chrome 톤매핑은 피부가 분홍으로 과포화), HEIC 사진(Chrome이 못 읽음).
 Studio 미리보기는 계속 .cache(경량 사본 + media/ 이름의 storyboard)를 쓴다 — 장면 이름 표시가 그 이름에 기댄다."""
 import hashlib

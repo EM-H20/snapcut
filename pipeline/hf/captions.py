@@ -1,4 +1,4 @@
-"""롱폼 자막 레이어 HTML (render/src/CaptionLayer.tsx 이식). 치수는 longform.py FORMATS의 chars와 짝:
+"""롱폼 자막 레이어 HTML. 치수는 longform.py FORMATS의 chars와 짝:
 자막바 글자 h/18(가로)·w/14(세로), 폭 86% / 말풍선 h/24·w/18, 폭 38%·76%. 자막 구성이 바뀌는 구간마다 시간 있는 div 하나."""
 import html
 
