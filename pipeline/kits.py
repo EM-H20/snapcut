@@ -9,6 +9,7 @@ from .paths import ROOT
 LOCK = ROOT / "kits.lock"
 KITS_DIR = ROOT / "kits"
 HF_VERSION = "0.8.149"
+PLAYWRIGHT = "1.63.0"  # animate 키트 도구가 위 폴더의 node_modules에서 찾는다 (install.sh가 kits/에 설치)
 AREAS = {"promo", "edit", "animation", "web", "core"}
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -79,3 +80,10 @@ def status(kits: list[dict], dest: Path = KITS_DIR) -> list[str]:
         n = len(k["skills"])
         lines.append(head + f"스킬 {n - len(missing)}/{n}개" + (f" (없음: {', '.join(missing)})" if missing else ""))
     return lines
+
+
+def node_tools(dest: Path = KITS_DIR) -> str:
+    pkg = dest / "node_modules" / "playwright" / "package.json"
+    if not pkg.is_file():
+        return f"node  playwright 없음 — npm i --prefix kits playwright@{PLAYWRIGHT} (animate 도구에 필요)"
+    return f"node  playwright {json.loads(pkg.read_text(encoding='utf-8'))['version']} (animate 도구)"

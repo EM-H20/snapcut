@@ -48,6 +48,7 @@ npx -y hyperframes@0.8.149 skills update music-to-video talking-head-recut embed
 
 say "외부 모션 키트 받기 (kits.lock)"
 .venv/bin/python -m pipeline kits
+npm i --prefix kits --no-audit --no-fund --silent playwright@1.63.0  # animate 키트 도구 (kits/는 git 제외)
 
 say "Finder 빠른 동작 설치"
 .venv/bin/python tools/install_quick_action.py

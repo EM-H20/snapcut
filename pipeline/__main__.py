@@ -418,6 +418,7 @@ def cmd_kits(args) -> None:
         print(f"경고: {w}")
     for line in kits.status(lock):
         print(line)
+    print(kits.node_tools())
 
 
 def main(argv=None) -> None:

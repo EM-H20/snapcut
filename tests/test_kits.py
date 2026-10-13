@@ -85,3 +85,10 @@ def test_status_reports_missing_skill_files(tmp_path, origin):
     kits.sync([kit], tmp_path / "kits")
     lines = kits.status([kit, {"name": "m", "area": "web", "npm": "motion"}], tmp_path / "kits")
     assert lines == ["edit  k: 스킬 1/2개 (없음: nope/SKILL.md)", "web   m: npm motion"]
+
+
+def test_node_tools_line_reports_playwright(tmp_path):
+    assert "없음" in kits.node_tools(tmp_path) and f"npm i --prefix kits playwright@{kits.PLAYWRIGHT}" in kits.node_tools(tmp_path)
+    (tmp_path / "node_modules" / "playwright").mkdir(parents=True)
+    (tmp_path / "node_modules" / "playwright" / "package.json").write_text('{"version": "1.63.0"}')
+    assert kits.node_tools(tmp_path) == "node  playwright 1.63.0 (animate 도구)"
