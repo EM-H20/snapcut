@@ -411,3 +411,15 @@ def test_studio_edit_project_previews_work_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
     cli.main(["studio", str(proj.root)])
     assert seen == [(edit.work(proj), {"hf": edit.HF})]
+
+
+def test_words_command_writes_next_to_file(monkeypatch, tmp_path, capsys):
+    from pipeline import edit
+    seen = []
+    monkeypatch.setattr(edit, "transcribe_file", lambda src, out: seen.append((src, out)) or
+                        {"audio_duration_secs": 12.5, "words": [{"text": "a"}, {"text": "b"}]})
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    (tmp_path / "01.wav").write_bytes(b"")
+    cli.main(["words", str(tmp_path / "01.wav")])
+    assert seen == [(tmp_path / "01.wav", tmp_path / "01.words.json")]
+    assert "단어 2개" in capsys.readouterr().out

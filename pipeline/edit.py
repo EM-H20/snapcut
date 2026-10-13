@@ -7,6 +7,7 @@ import math
 import re
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 from . import convert, ff, kits, longform, transcribe
@@ -148,6 +149,31 @@ def _silences(wav: Path, duration: float) -> list[tuple[float, float]]:
     return parse_silence(_ffmpeg_log(wav, f"silencedetect=noise={noise:.1f}dB:d=0.3"), duration)
 
 
+def words_from_wav(wav: Path, engine) -> tuple[list[dict], float]:
+    """16kHz wav → 무음으로 경계를 다듬은 단어 목록, 길이."""
+    with wave.open(str(wav), "rb") as w:
+        duration = w.getnframes() / float(w.getframerate())
+    return fit_words(engine.transcribe(wav, LANGUAGE, words=True), _silences(wav, duration)), duration
+
+
+def transcribe_file(src: Path, out: Path, engine_factory=WhisperCli.from_env, models: Path = transcribe.MODELS_DIR,
+                    download=None) -> dict:
+    """음성·영상 파일 하나 → 키트 형식 단어 JSON (product-launch word-timings.mjs 등이 그대로 읽는다)."""
+    if not transcribe.audio_tracks(src):
+        raise ValueError(f"{src.name}에 소리가 없습니다")
+    engine = engine_factory(models)
+    (download or transcribe.ensure_models)(models)
+    wav = out.with_name(out.stem + ".part.wav")
+    try:
+        transcribe.extract_wav(src, 1, wav)
+        words, duration = words_from_wav(wav, engine)
+    finally:
+        wav.unlink(missing_ok=True)
+    data = kit_transcript(words, duration)
+    out.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return data
+
+
 def prepare(proj: Project, file: str | None = None, track: int = 1, engine_factory=WhisperCli.from_env,
             models: Path = transcribe.MODELS_DIR, download=None) -> dict:
     """원본 → assets/raw.mp4·raw.json(단어 전사) → 키트 무음 컷(silenced.mp4) → 실수 후보(candidates.json)."""
@@ -171,8 +197,7 @@ def prepare(proj: Project, file: str | None = None, track: int = 1, engine_facto
         wav = a / "raw.wav"
         try:
             transcribe.extract_wav(raw, 1, wav)
-            duration = float(ff.probe(raw)["format"]["duration"])
-            words = fit_words(engine.transcribe(wav, LANGUAGE, words=True), _silences(wav, duration))
+            words, duration = words_from_wav(wav, engine)
         finally:
             wav.unlink(missing_ok=True)
         rj.write_text(json.dumps({"key": key, **kit_transcript(words, duration)}, ensure_ascii=False, indent=1), encoding="utf-8")

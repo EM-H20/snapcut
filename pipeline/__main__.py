@@ -340,6 +340,15 @@ def cmd_edit(args) -> None:
           f'{{"cuts": [{{"start": 초, "end": 초, "reason": "…"}}]}}를 쓴 뒤 `python -m pipeline edit {proj.root.name} --cuts`')
 
 
+def cmd_words(args) -> None:
+    src = Path(args.file).expanduser()
+    if not src.is_file():
+        raise SystemExit(f"파일이 없습니다: {src}")
+    out = Path(args.out).expanduser() if args.out else src.with_name(src.stem + ".words.json")
+    d = edit.transcribe_file(src, out)
+    print(f"단어 {len(d['words'])}개, {d['audio_duration_secs']:.1f}초 → {out}")
+
+
 def run_checks(proj: Project, files: list[Path], fmt: str | None = None) -> bool:
     """mp4들을 점검하고 output/check.json에 남긴다. 전부 통과하면 True."""
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8")) if proj.storyboard.exists() else None
@@ -410,6 +419,9 @@ def main(argv=None) -> None:
     ed.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
     ed.add_argument("--track", default="1", help="목소리 오디오 트랙 번호 (1부터)")
     ed.add_argument("--cuts", action="store_true", help="approved-cuts.json을 적용해 clean.mp4와 시작 구성을 만든다")
+    wd = sub.add_parser("words")
+    wd.add_argument("file", help="음성(또는 영상) 파일")
+    wd.add_argument("--out", default=None, help="결과 JSON (기본: <파일>.words.json)")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)
@@ -429,7 +441,7 @@ def main(argv=None) -> None:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "edit": cmd_edit, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "edit": cmd_edit, "words": cmd_words, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

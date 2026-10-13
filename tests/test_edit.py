@@ -197,3 +197,23 @@ def test_new_source_key_sets_aside_cuts_for_the_old_timeline(tmp_path):
     assert not (a / "approved-cuts.json").exists() and (a / "approved-cuts.stale.json").exists()
     assert not any((a / n).exists() for n in ("clean.mp4", "transcript.json", "clean.srt"))
     assert (edit.work(proj) / "index.html").exists()
+
+
+# ---- pipeline words (promo 등 키트 음성용) ----
+def test_transcribe_file_writes_kit_words_json(tmp_path):
+    src = tmp_path / "vo.m4a"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+                    "aevalsrc='if(between(t,2.5,4.5),0,0.3*sin(2*PI*440*t))':s=48000:d=6", "-c:a", "aac", str(src)], check=True)
+    out = tmp_path / "vo.words.json"
+    data = edit.transcribe_file(src, out, engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
+    assert json.loads(out.read_text(encoding="utf-8")) == data
+    assert [w["text"] for w in data["words"]] == ["오늘은", "오늘은", "산에", "갑니다."] and data["words"][2]["start"] >= 4.4
+    assert abs(data["audio_duration_secs"] - 6.0) < 0.1
+
+
+def test_transcribe_file_without_audio_says_so(tmp_path):
+    src = tmp_path / "mute.mp4"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=64x48:d=1", "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p", str(src)], check=True)
+    with pytest.raises(ValueError, match="소리가 없습니다"):
+        edit.transcribe_file(src, tmp_path / "o.json", engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
