@@ -189,3 +189,13 @@ def test_behind_title_layers_photo_text_cutout():
     i_photo, i_text, i_cut = page.index('src="media/p.jpg"'), page.index(">인왕산<"), page.index('src="cutout/youtube_s1.png"')
     assert i_photo < i_text < i_cut  # 사진 → 글자 → 사람 (같은 상자)
     assert 'tl.fromTo("#s1-bt"' in page and "@font-face" in page
+
+
+def test_behind_title_is_big_and_low_enough_to_pass_behind_heads():
+    shots = [dict(s) for s in ALL]
+    shots[1]["behindTitle"] = "인왕산"
+    page = mv.build(_sb(shots), "youtube")
+    assert "font-size:324px" in page                       # 3글자: 화면 높이의 30%
+    shots[1]["behindTitle"] = "가" * 12
+    assert "font-size:141px" in mv.build(_sb(shots), "youtube")  # 긴 글자는 폭 88%에 맞춰 줄인다
+    assert "top:16%" in mv.TITLE_CSS
