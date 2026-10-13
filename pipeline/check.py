@@ -137,8 +137,9 @@ def make_sheets(path: Path, times: list[float], duration: float, out_dir: Path) 
 
 
 def _drawn(path: Path, t: float) -> bool:
-    """그 시각 프레임에 밝은 무언가가 그려져 있는가. 어두운 화풍(얇은 선)은 blackdetect가 검정으로 본다(98% 픽셀이 어두움)."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", "format=gray",
+    """그 시각 프레임 가운데 60% 띠에 밝은 무언가가 그려져 있는가. 어두운 화풍(얇은 선)은 blackdetect가 검정으로 본다(98% 픽셀이 어두움).
+    가운데 띠만 보는 이유: 빠진 클립 위에 태운 자막·구석 로고·타임코드는 화면 위아래에 있고, 그건 검은 화면이 맞다."""
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", "crop=iw:ih*0.6,format=gray",
                           "-f", "rawvideo", "-"], stdin=subprocess.DEVNULL, capture_output=True).stdout
     px = np.frombuffer(raw, np.uint8)
     return px.size > 0 and float((px > DRAWN_LUMA).mean()) >= DRAWN_SHARE

@@ -160,3 +160,16 @@ def test_dark_frame_with_drawn_lines_is_not_black(tmp_path):
     r = check.check_file(mp4, None, tmp_path / "check")
     blacks = [i for i in r["issues"] if i["kind"] == "black"]
     assert len(blacks) == 1 and 6.4 < blacks[0]["at"] < 6.6  # 상자가 그려진 3.0–3.5초는 빠지고 6.5초 검정만
+
+
+def test_black_gap_under_a_burned_caption_is_still_black(tmp_path):
+    """자막을 태운 모드(롱폼·edit)에서 빠진 클립 = 검은 화면 + 아래쪽 자막 한 줄. 화면 가운데에 그려진 게 없으면 검정이다."""
+    mp4 = tmp_path / "gap.mp4"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-filter_complex",
+                    "color=c=gray:s=320x240:r=30:d=3[a];"
+                    "color=c=black:s=320x240:r=30:d=1,drawbox=x=80:y=212:w=160:h=3:color=white:t=fill[b];"
+                    "color=c=gray:s=320x240:r=30:d=3[c];"
+                    "[a][b][c]concat=n=3:v=1:a=0,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709[out]",
+                    "-map", "[out]", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(mp4)], check=True)
+    r = check.check_file(mp4, None, tmp_path / "check")
+    assert [i["kind"] for i in r["issues"]] == ["black"]
