@@ -8,6 +8,14 @@ die() { printf '\n✗ %s\n' "$1" >&2; exit 1; }
 
 [ "$(uname)" = Darwin ] || die "snapcut은 macOS 전용입니다."
 
+WITH_SAM2=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-sam2) WITH_SAM2=1 ;;  # Barty-Bart object-separation (SAM 2): torch 등 수 GB — 기본 설치에는 없다
+    *) die "알 수 없는 옵션: $arg (가능: --with-sam2)" ;;
+  esac
+done
+
 need() {  # $1 명령, $2 brew 패키지 — 없으면 Homebrew로 설치
   command -v "$1" >/dev/null && return
   command -v brew >/dev/null || die "$1이(가) 없습니다. Homebrew(https://brew.sh)를 설치한 뒤 다시 실행하세요."
@@ -49,6 +57,11 @@ npx -y hyperframes@0.8.149 skills update music-to-video talking-head-recut embed
 say "외부 모션 키트 받기 (kits.lock)"
 .venv/bin/python -m pipeline kits
 npm i --prefix kits --no-audit --no-fund --silent playwright@1.63.0  # animate 키트 도구 (kits/는 git 제외)
+if [ "$WITH_SAM2" = 1 ]; then
+  say "SAM 2 사물 분리 (kits/.object-separation, 키트 object-separation SKILL.md의 패키지)"
+  [ -x kits/.object-separation/bin/python ] || "$PY" -m venv kits/.object-separation
+  kits/.object-separation/bin/pip install -q torch transformers opencv-python-headless pillow numpy
+fi
 
 say "Finder 빠른 동작 설치"
 .venv/bin/python tools/install_quick_action.py
