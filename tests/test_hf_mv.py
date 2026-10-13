@@ -150,3 +150,42 @@ def test_freeze_on_live_video_ends_split_sound_with_picture():
             "freeze": 1.0, "lcut": 0.4}
     html = mv.build(_sb([shot]), "youtube")
     assert re.search(r'<audio id="a0" src="media/y.mp4" data-start="0.000000" data-duration="3.400000"', html)
+
+
+# ---- 효과 (계획 6) ----
+CUES = {"transitions": [], "accents": [5.0, 9.0], "drop": 5.0}
+
+
+def test_no_effects_page_is_unchanged():
+    assert "grain" not in mv.build(_sb(ALL), "youtube") and 'id="flash"' not in mv.build(_sb(ALL), "youtube")
+
+
+def test_film_look_adds_grain_and_vignette_without_blend_modes():
+    sb = dict(_sb(ALL, cues=CUES), effects={"filmLook": True})
+    page = mv.build(sb, "youtube")
+    assert 'id="grain"' in page and 'id="vignette"' in page
+    assert "mix-blend-mode" not in page  # 블렌드 모드는 HF 빠른 캡처를 끈다
+    assert "Math.floor(this.time()*30/2)" in page  # 2프레임마다 바뀌는 결정적 위치
+
+
+def test_beat_accent_flashes_on_floored_frames():
+    sb = dict(_sb(ALL, cues=CUES), effects={"beatAccent": True})
+    page = mv.build(sb, "youtube")
+    assert 'id="flash"' in page
+    assert page.count('tl.fromTo("#flash"') == 4  # 강조마다 오름·내림
+    assert ',5.000000);' in page and ',9.000000);' in page  # 프레임 정수에서 계산한 시각
+
+
+def test_sfx_stem_is_one_audio_element():
+    sb = dict(_sb(ALL, cues=CUES, sfx="music/sfx_youtube.wav"), effects={"sfx": True})
+    page = mv.build(sb, "youtube")
+    assert '<audio id="sfx" src="music/sfx_youtube.wav" data-start="0"' in page
+
+
+def test_behind_title_layers_photo_text_cutout():
+    shots = [dict(s) for s in ALL]
+    shots[1]["behindTitle"] = "인왕산"
+    page = mv.build(_sb(shots), "youtube")
+    i_photo, i_text, i_cut = page.index('src="media/p.jpg"'), page.index(">인왕산<"), page.index('src="cutout/youtube_s1.png"')
+    assert i_photo < i_text < i_cut  # 사진 → 글자 → 사람 (같은 상자)
+    assert 'tl.fromTo("#s1-bt"' in page and "@font-face" in page

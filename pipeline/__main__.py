@@ -235,6 +235,7 @@ def cmd_studio(args) -> None:
         if fmt not in sb["formats"]:
             raise SystemExit(f"storyboard에 '{fmt}' 형식이 없습니다 (있는 형식: {', '.join(sb['formats'])})")
         engine.freeze_stills(proj.cache, fmt, sb["formats"][fmt]["shots"])
+        engine.cutouts(proj.cache, fmt, sb["formats"][fmt]["shots"])
         page = mv.build(sb, fmt, preview=True)
     (proj.cache / "index.html").write_text(page, encoding="utf-8")
     print(f"미리보기: {fmt} (다른 형식은 --format)")
@@ -298,6 +299,7 @@ def cmd_render(args) -> None:
         for f in formats:
             out = proj.output / f"{proj.root.name}_{f}.mp4"
             engine.freeze_stills(public, f, rsb["formats"][f]["shots"])
+            engine.cutouts(public, f, rsb["formats"][f]["shots"])
             (public / f"{f}.html").write_text(mv.build(rsb, f), encoding="utf-8")
             engine.render(public, f"{f}.html", out)
             print(f"완성: {out}")

@@ -17,7 +17,7 @@ LINKS = ("cards", "music", "fonts")  # .cache에서 그대로 쓰는 폴더
 BEFORE, AFTER = 1.0, 1.5  # HDR 변환 구간 앞뒤 여유(초). 뒤: 다음 장면 디졸브(≤1)·와이프(≤1.5) 동안 이 장면이 더 남는다 (배속이면 그만큼 더)
 HDR_CRF = "12"  # 렌더 직전 한 번뿐인 변환이라 거의 무손실로
 HDR_ENCODE = "vt-bt709-grade1"  # 변환 방식 버전 — 바꾸면 기존 변환본을 다시 만든다
-CONVERTED = ("hdr", "heic", "freeze")  # 렌더가 끝나면 지우는 변환본 폴더 (freeze: 프리즈 프레임 정지 사진)
+CONVERTED = ("hdr", "heic", "freeze", "cutout")  # 렌더가 끝나면 지우는 변환본 폴더 (freeze: 프리즈 프레임 정지 사진, cutout: 인물 뒤 글자용 오려낸 사람)
 HEIC_EXT = {".heic", ".heif"}
 
 

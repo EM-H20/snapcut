@@ -34,3 +34,15 @@ def freeze_stills(root: Path, fmt: str, shots: list[dict]) -> None:
             dst.parent.mkdir(exist_ok=True)
             # out 앞 0.5초를 읽어 마지막 프레임만 남긴다 (out이 파일 끝이면 out 바로 앞 시점도 마지막 프레임보다 늦을 수 있다)
             ff.run("-ss", f"{max(0.0, s['out'] - 0.5):.3f}", "-t", "0.5", "-i", str(root / s["src"]), "-update", "1", "-q:v", "2", str(dst))
+
+
+def cutouts(root: Path, fmt: str, shots: list[dict]) -> None:
+    """behindTitle 사진: 사람만 오려낸 PNG를 mv.cutout 경로에 (HF remove-background, u2net_human_seg — 첫 실행 때 모델 176MB)."""
+    for i, s in enumerate(shots):
+        if s["type"] == "photo" and s.get("behindTitle"):
+            dst = root / mv.cutout(fmt, i)
+            dst.parent.mkdir(exist_ok=True)
+            r = subprocess.run(["npx", "-y", HF, "remove-background", str(root / s["src"]), "-o", str(dst), "--quality", "best"],
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+            if r.returncode:
+                raise RuntimeError(f"인물 오려내기 실패 ({s['src']}): {(r.stderr or r.stdout)[-400:]}")

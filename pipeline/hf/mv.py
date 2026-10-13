@@ -38,6 +38,25 @@ def still(fmt: str, i: int) -> str:
     return f"freeze/{fmt}_s{i}.jpg"
 
 
+def cutout(fmt: str, i: int) -> str:
+    """인물 뒤 글자용: 사진에서 사람만 오려낸 PNG (engine.cutouts가 만든다)."""
+    return f"cutout/{fmt}_s{i}.png"
+
+
+# 효과 (selection "effects", 계획 6). 블렌드 모드는 쓰지 않는다 — HF 빠른 캡처가 꺼진다
+GRAIN = ("url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E"
+         "%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E"
+         "%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E\")")
+FX_CSS = (".fx{position:absolute;pointer-events:none}"
+          f".grain{{inset:-10%;background-image:{GRAIN};background-size:220px;opacity:.07;z-index:9001}}"
+          ".vignette{inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 58%,rgba(0,0,0,.42) 100%);z-index:9002}"
+          ".flash{inset:0;background:#fff;opacity:0;z-index:9000}")
+FLASH_PEAK, FLASH_UP, FLASH_DOWN = 0.3, 2, 6  # 프레임
+TITLE_FONT = '@font-face{font-family:"Apple SD Gothic Neo";src:local("Apple SD Gothic Neo")}'
+TITLE_CSS = (".btitle{position:absolute;left:0;right:0;top:12%;text-align:center;font-family:'Apple SD Gothic Neo',sans-serif;"
+             "font-weight:800;letter-spacing:-0.03em;color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.35);white-space:nowrap}")
+
+
 def tween(target: str, a: dict, b: dict, frames: int, at: int, fps: int, ease: str = "none") -> str:
     to = dict(b, duration=frames / fps, ease=ease, immediateRender=False)
     return f"tl.fromTo({json.dumps(target)},{json.dumps(a)},{json.dumps(to)},{T.ts(at, fps)});"
@@ -136,6 +155,11 @@ def _shot(i: int, s: dict, sp: dict, fmt: str, fps: int, w: int, h: int, js: lis
         kb = T.kenburns(s.get("kenBurns", "still"))
         if t == "photo":
             inner = f'<img class="contain" src="{attr(s["src"])}">'
+            if s.get("behindTitle"):  # 사진 → 큰 글자 → 같은 상자의 사람 오려낸 PNG: 글자가 사람 뒤로
+                inner += (f'<div id="s{i}-bt" class="btitle" style="font-size:{round(h * 0.22)}px">{html.escape(s["behindTitle"])}</div>'
+                          f'<img class="contain" src="{cutout(fmt, i)}">')
+                js.append(tween(f"#s{i}-bt", {"opacity": 0, "y": round(h * 0.05)}, {"opacity": 1, "y": 0}, T.frame(0.8, fps),
+                                f0 + T.frame(0.2, fps), fps, "power3.out"))
             if kb:
                 inner = f'<div id="s{i}-k" class="fill">{inner}</div>'
                 js.append(tween(f"#s{i}-k", kb[0], kb[1], n, f0, fps))
@@ -220,8 +244,30 @@ def build(sb: dict, fmt: str, preview: bool = False) -> str:
     body.insert(0, f'<audio id="music" src="{attr(sb["music"])}" data-start="0" data-duration="{T.ts(total_f, fps)}" '
                    f'data-media-start="{plan["musicStart"]:.6f}" data-volume="1" data-track-index="0" '
                    f'data-automation="{attr(json.dumps(lane))}"></audio>')
-    if preview:
-        js.append(COPY_JS)
     css = (f'@font-face{{font-family:SnapcutHand;src:url("{sb["font"]}")}}'  # 크레딧 손글씨 — 글꼴 파일이 있을 때만 이름을 쓴다
            '.credit-line{font-family:SnapcutHand,sans-serif}') if sb.get("font") else ""
+    if any(s.get("behindTitle") for s in shots):
+        css += TITLE_FONT + TITLE_CSS
+    css += _effects(sb.get("effects", {}), plan, total_f, fps, body, js)
+    if preview:
+        js.append(COPY_JS)
     return page(w, h, total_f, fps, "\n".join(body), js, css)
+
+
+def _effects(fx: dict, plan: dict, total_f: int, fps: int, body: list[str], js: list[str]) -> str:
+    if not fx:
+        return ""
+    if fx.get("sfx") and plan.get("sfx"):  # 효과음 줄기 (sound.render_sfx) — 음악과 같은 길이
+        body.insert(1, f'<audio id="sfx" src="{attr(plan["sfx"])}" data-start="0" data-duration="{T.ts(total_f, fps)}" '
+                       'data-volume="1" data-track-index="9000"></audio>')
+    if fx.get("beatAccent"):  # 박자 강조: 흰 플래시만 (사진 줌·펀치 없음 — 취향 기록)
+        body.append('<div id="flash" class="fx flash"></div>')
+        for t in plan["cues"]["accents"]:
+            a = T.frame(t, fps)
+            js.append(tween("#flash", {"opacity": 0}, {"opacity": FLASH_PEAK}, FLASH_UP, a, fps))
+            js.append(tween("#flash", {"opacity": FLASH_PEAK}, {"opacity": 0}, FLASH_DOWN, a + FLASH_UP, fps, "power2.out"))
+    if fx.get("filmLook"):  # 필름 룩: 회색 노이즈(2프레임마다 결정적으로 자리 이동) + 비네트
+        body.append('<div id="grain" class="fx grain"></div><div id="vignette" class="fx vignette"></div>')
+        js.append(f'tl.to({{}},{{duration:{total_f / fps},onUpdate(){{const k=Math.floor(this.time()*{fps}/2);'
+                  'document.getElementById("grain").style.backgroundPosition=((k*73)%220)+"px "+((k*151)%220)+"px";}},0);')
+    return FX_CSS

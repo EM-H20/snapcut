@@ -475,3 +475,21 @@ def test_effect_audio_writes_one_stem_per_format(monkeypatch, tmp_path):
     calls.clear()
     cli._effect_audio(proj, {"effects": {"filmLook": True}, "formats": {"youtube": {"cues": cues}}})
     assert calls == []
+
+
+def test_render_and_studio_make_cutouts_before_building(monkeypatch, tmp_path):
+    from pipeline import render_src
+    from pipeline.hf import engine
+    proj = _project(tmp_path)
+    proj.cache.mkdir()
+    proj.storyboard.write_text(json.dumps(MINI))
+    monkeypatch.setattr(render_src, "build", lambda p, f: _public(p))
+    monkeypatch.setattr(render_src, "clean", lambda root: None)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    _fake_hf(monkeypatch, [])
+    seen = []
+    monkeypatch.setattr(engine, "cutouts", lambda root, fmt, shots: seen.append((root, fmt)))
+    monkeypatch.setattr(engine, "preview", lambda root, **kw: None)
+    cli.main(["render", str(proj.root)])
+    cli.main(["studio", str(proj.root)])
+    assert seen == [(proj.cache / "render", "youtube"), (proj.cache, "youtube")]
