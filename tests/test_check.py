@@ -146,3 +146,17 @@ def test_freeze_tail_is_not_a_video_span():
         {"type": "video", "start": 0.0, "end": 4.0, "freeze": 1.5},
         {"type": "video", "start": 4.0, "end": 6.0}]}}}
     assert check.plan_view(sb, "youtube")["video_spans"] == [(0.0, 2.5), (4.0, 6.0)]
+
+
+def test_dark_frame_with_drawn_lines_is_not_black(tmp_path):
+    """어두운 화풍(수학 스타일): 거의 검은 바탕에 얇은 밝은 선 — 그려진 것이 있으면 검은 화면이 아니다. 완전히 검은 구간은 계속 잡는다."""
+    mp4 = tmp_path / "dark.mp4"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-filter_complex",
+                    "color=c=gray:s=320x240:r=30:d=3[a];"
+                    "color=c=0x0b0d0e:s=320x240:r=30:d=0.5,drawbox=x=100:y=60:w=120:h=120:color=yellow:t=2[b];"
+                    "color=c=gray:s=320x240:r=30:d=3[c];color=c=black:s=320x240:r=30:d=0.5[d];color=c=gray:s=320x240:r=30:d=3[e];"
+                    "[a][b][c][d][e]concat=n=5:v=1:a=0,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709[out]",
+                    "-map", "[out]", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(mp4)], check=True)
+    r = check.check_file(mp4, None, tmp_path / "check")
+    blacks = [i for i in r["issues"] if i["kind"] == "black"]
+    assert len(blacks) == 1 and 6.4 < blacks[0]["at"] < 6.6  # 상자가 그려진 3.0–3.5초는 빠지고 6.5초 검정만

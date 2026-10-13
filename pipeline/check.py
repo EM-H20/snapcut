@@ -4,6 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 from . import ff
@@ -16,6 +17,7 @@ CREDITS_FADE = 2.0
 EDGE_SECONDS = 2.0  # 계획이 없을 때 처음·끝 이만큼의 검정은 페이드로 본다
 STILL_OFFSET = 0.3
 SHEET_COLS, SHEET_ROWS, CELL_W = 4, 3, 480
+DRAWN_LUMA, DRAWN_SHARE = 80, 0.001  # 밝기 80/255 넘는 픽셀이 0.1% 이상이면 그려진 것이 있는 화면
 VIDEO_FILTERS = "blackdetect=d=0.03:pix_th=0.10,freezedetect=n=0.001:d=0.15,scdet=t=12,metadata=print:key=lavfi.scd.time"
 
 
@@ -134,11 +136,20 @@ def make_sheets(path: Path, times: list[float], duration: float, out_dir: Path) 
     return sheets
 
 
+def _drawn(path: Path, t: float) -> bool:
+    """그 시각 프레임에 밝은 무언가가 그려져 있는가. 어두운 화풍(얇은 선)은 blackdetect가 검정으로 본다(98% 픽셀이 어두움)."""
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", "-vf", "format=gray",
+                          "-f", "rawvideo", "-"], stdin=subprocess.DEVNULL, capture_output=True).stdout
+    px = np.frombuffer(raw, np.uint8)
+    return px.size > 0 and float((px > DRAWN_LUMA).mean()) >= DRAWN_SHARE
+
+
 def check_file(path: Path, view: dict | None, out_dir: Path) -> dict:
     info = media_info(path)
     log = _analyze(path, info["has_audio"])
     loud = parse_loudness(log) if info["has_audio"] else None
-    issues = judge(parse_black(log), parse_freeze(log), loud, info, view)
+    black = [(a, b) for a, b in parse_black(log) if not _drawn(path, (a + b) / 2)]
+    issues = judge(black, parse_freeze(log), loud, info, view)
     cuts = view["cuts"] if view else parse_cuts(log)
     sheets = make_sheets(path, [0.0, *cuts], info["duration"], out_dir)
     return {"ok": not issues, "issues": issues, "loudness": loud, "sheets": [str(p) for p in sheets]}
