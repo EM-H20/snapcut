@@ -91,6 +91,9 @@ Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라�
 ### 짧은 애니메이션
 `/snapcut <이름> "<주제> 설명 애니메이션 만들어줘"`. 손그림·수학·종이 같은 캔버스 화풍(animate), 장면이 이어지는 모션그래픽과 코드로 만든 효과음(claude-motion), Remotion 릴스(claude-remotion-skill) 중 하나로 만든다. 한국어 내레이션은 macOS 기본 목소리, 유료 키 없음.
 
+### 웹사이트 애니메이션
+`/snapcut <이름> "<제품> 랜딩 페이지 애니메이션 만들어줘"`. Vite + React + Motion으로 페이지를 만들어 `output/site/`(빌드된 정적 사이트)와 미리보기 영상 `output/<이름>_web.mp4`를 준다.
+
 ### 명령어로 직접 쓰기
 Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 ```bash
@@ -105,7 +108,7 @@ Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 | `plan <영상명>` | `selection.json` → 타임라인(`.cache/storyboard.json`) + 인트로/아웃트로 카드. `longform.json`이 있으면 롱폼 계획 |
 | `edit <영상명> [--file 이름] [--track N]` | 편집: 단어 전사 → 쉼 자르기 → 실수 후보(`work/edit/assets/`). `--cuts`면 `approved-cuts.json` 적용 + 시작 구성 |
 | `words <음성> [--out json]` | 음성 → 단어 시각 JSON (키트 내레이션 타이밍용) |
-| `capture <페이지.html> <mp4> --seconds 8 [--size 1080x1920]` | `window.seek` 페이지를 프레임마다 찍어 mp4로 |
+| `capture <페이지.html 또는 사이트 폴더> <mp4> --seconds 8 [--size 1080x1920]` | `window.seek` 페이지를 프레임마다 찍어 mp4로 (폴더는 로컬 HTTP로 띄움) |
 | `studio <영상명>` | 미리보기 열기 |
 | `render <영상명> --formats reels,youtube` | 완성 영상 렌더 |
 
