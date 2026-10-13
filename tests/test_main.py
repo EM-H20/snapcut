@@ -239,7 +239,7 @@ def _fake_hf(monkeypatch, calls, fail=False):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"x")
     monkeypatch.setattr(engine, "render", render)
-    monkeypatch.setattr(cli.master, "master", lambda p: False)
+    monkeypatch.setattr(cli.master, "master", lambda p: [])
     monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: {"ok": True, "issues": [], "loudness": None, "sheets": []})
 
 
@@ -315,7 +315,7 @@ def test_render_masters_then_checks_each_output(monkeypatch, tmp_path):
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
     _fake_hf(monkeypatch, [])
     order = []
-    monkeypatch.setattr(cli.master, "master", lambda p: order.append(("master", p.name)) or True)
+    monkeypatch.setattr(cli.master, "master", lambda p: order.append(("master", p.name)) or ["loudness"])
     monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: order.append(("check", p.name, v["duration"]))
                         or {"ok": False, "issues": [{"detail": "x"}], "loudness": None, "sheets": []})
     cli.main(["render", str(proj.root)])  # 점검 실패는 렌더 실패가 아니다 — 예외 없이 끝나고 알린다
@@ -391,7 +391,7 @@ def test_render_edit_project_on_kit_hyperframes(monkeypatch, tmp_path):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"x")
     monkeypatch.setattr(engine, "render", render)
-    monkeypatch.setattr(cli.master, "master", lambda p: False)
+    monkeypatch.setattr(cli.master, "master", lambda p: [])
     checked = []
     monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: checked.append((p, v)) or {"ok": True, "issues": [], "loudness": None, "sheets": []})
     monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
@@ -436,3 +436,16 @@ def test_capture_command_parses_size(monkeypatch, tmp_path, capsys):
     assert "240프레임" in capsys.readouterr().out
     with pytest.raises(SystemExit, match="WxH"):
         cli.main(["capture", str(tmp_path / "e.html"), str(tmp_path / "o.mp4"), "--seconds", "8", "--size", "big"])
+
+
+def test_master_command_says_what_it_did(monkeypatch, tmp_path, capsys):
+    f = tmp_path / "a.mp4"
+    f.write_bytes(b"x")
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    monkeypatch.setattr(cli.master, "master", lambda p: ["color", "loudness"])
+    cli.main(["master", str(f)])
+    assert "색 bt709 변환, 음량 -14 LUFS: a.mp4" in capsys.readouterr().out
+    monkeypatch.setattr(cli.master, "master", lambda p: [])
+    monkeypatch.setattr(cli.check, "media_info", lambda p: {"has_audio": False})
+    cli.main(["master", str(f)])
+    assert "소리 없음 — 바꿀 것 없음: a.mp4" in capsys.readouterr().out

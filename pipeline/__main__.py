@@ -379,15 +379,23 @@ def finish(proj: Project, outs: list[Path]) -> None:
     """렌더 직후: 음량 마스터링 → 품질 점검. 점검 실패는 알리기만 한다 (파일은 남김)."""
     outs = [o for o in outs if o.exists()]
     for o in outs:
-        if master.master(o):
-            print(f"음량 마스터링: {o.name}")
+        if done := master.master(o):
+            print(f"{_mastered(done)}: {o.name}")
     if outs and not run_checks(proj, outs):
         print("주의: 점검 실패 항목이 있습니다 — 완성이라고 하지 말고 위 항목부터 고치세요")
 
 
+def _mastered(done: list[str]) -> str:
+    return ", ".join({"color": "색 bt709 변환", "loudness": "음량 -14 LUFS"}[d] for d in done)
+
+
 def cmd_master(args) -> None:
     f = Path(args.mp4).expanduser()
-    print(f"음량 마스터링: {f.name}" if master.master(f) else f"이미 기준 안: {f.name}")
+    done = master.master(f)
+    if done:
+        print(f"{_mastered(done)}: {f.name}")
+    else:
+        print(f"{'이미 기준 안' if check.media_info(f)['has_audio'] else '소리 없음 — 바꿀 것 없음'}: {f.name}")
 
 
 def cmd_check(args) -> None:

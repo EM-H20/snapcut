@@ -33,7 +33,7 @@ description: 영상 만들기 전부의 입구. 여행·행사 사진/영상 추
 
 ## 3. 렌더 후 점검 (모든 모드)
 - 렌더는 사용자가 요청할 때만 한다.
-- `pipeline render`는 끝나면 음량 마스터링과 품질 점검을 자동으로 돈다. 키트가 직접 만든 mp4는 `output/`에 두고 `pipeline master <mp4>` → `pipeline check <이름>`을 직접 돌린다.
+- `pipeline render`는 끝나면 음량 마스터링과 품질 점검을 자동으로 돈다. 키트가 직접 만든 mp4는 `output/`에 두고 `pipeline master <mp4>`(음량, 색 태그가 없으면 bt709 변환) → `pipeline check <이름> <mp4>`를 직접 돌린다.
 - 점검이 실패하면 **완성이라고 말하지 않는다.** 실패 항목(시각 포함)을 전하고 고친다.
 - 통과하면 `output/check/<파일>/sheet_*.jpg`를 **전부** Read로 보고 아래를 확인한 뒤 완성 경로를 알려 준다:
   - 글씨 잘림·겹침, 안전 영역(릴스·쇼츠는 위아래 UI 자리)

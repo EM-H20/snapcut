@@ -1,4 +1,5 @@
-"""최종 mp4 음량 마스터링 — 2단계 loudnorm, 영상 스트림은 그대로 복사한다."""
+"""최종 mp4 마스터링 — 2단계 loudnorm. 영상은 그대로 복사하되, bt709 태그가 없으면(키트 출력: ffmpeg·Chrome 기본 bt601 변환 + 태그 없음)
+bt601→bt709로 다시 인코딩한다. 태그만 붙이면 bt601 값을 bt709로 읽어 색이 어긋난다."""
 import json
 import re
 import subprocess
@@ -8,6 +9,8 @@ from . import check, ff
 
 TARGET_I, TARGET_TP, TARGET_LRA = -14.0, -1.5, 11.0  # TP는 점검 기준(-1)보다 0.5 여유
 SILENCE_LUFS = -70.0
+BT709 = ("bt709", "bt709", "bt709")
+MATRIX = {"bt709": "bt709", "bt470bg": "bt470", "smpte170m": "smpte170m"}  # ffprobe color_space → scale 행렬 이름
 
 
 def _loudnorm(extra: str = "") -> str:
@@ -30,19 +33,32 @@ def needs_master(m: dict) -> bool:
     return not (check.LUFS_RANGE[0] <= i <= check.LUFS_RANGE[1] and tp <= check.MAX_TRUE_PEAK)
 
 
-def master(path: Path) -> bool:
-    if not check.media_info(path)["has_audio"]:
-        return False
-    m = measure(path)
-    if not needs_master(m):
-        return False
+def _color_args(space: str | None) -> list[str]:
+    vf = (f"scale=in_color_matrix={MATRIX.get(space, 'bt601')}:out_color_matrix=bt709:out_range=tv,format=yuv420p,"
+          "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv")
+    return ["-vf", vf, "-c:v", "libx264", "-crf", "16", "-preset", "medium",
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+
+
+def master(path: Path) -> list[str]:
+    """한 일: "color"(bt709로 다시 인코딩), "loudness"(음량). 둘 다 필요 없으면 파일을 건드리지 않는다."""
+    info = check.media_info(path)
+    color = info["color"] != BT709
+    af = None
+    if info["has_audio"]:
+        m = measure(path)
+        if needs_master(m):
+            af = _loudnorm(f":measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
+                           f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
+    if not color and not af:
+        return []
+    video = _color_args(info["color"][2]) if color else ["-c:v", "copy"]
+    audio = ([] if not info["has_audio"] else
+             ["-map", "0:a", "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "320k"] if af else ["-map", "0:a", "-c:a", "copy"])
     tmp = path.with_name(path.stem + ".master" + path.suffix)
-    af = _loudnorm(f":measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}"
-                   f":measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
     try:
-        ff.run("-i", str(path), "-map", "0:v", "-map", "0:a", "-c:v", "copy", "-af", af, "-ar", "48000",
-               "-c:a", "aac", "-b:a", "320k", "-movflags", "+faststart", str(tmp))
+        ff.run("-i", str(path), "-map", "0:v", *video, *audio, "-movflags", "+faststart", str(tmp))
         tmp.replace(path)
     finally:
         tmp.unlink(missing_ok=True)
-    return True
+    return [x for x, on in (("color", color), ("loudness", af)) if on]

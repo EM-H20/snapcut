@@ -12,7 +12,7 @@
 
 ## 명령
 - 테스트: `.venv/bin/python -m pytest` (빠름), `.venv/bin/python -m pytest -m slow` (렌더 E2E)
-- 품질 점검: `.venv/bin/python -m pipeline check <이름> [mp4]` (render가 끝나면 자동), 음량: `pipeline master <mp4>`
+- 품질 점검: `.venv/bin/python -m pipeline check <이름> [mp4]` (render가 끝나면 자동), 음량·색(태그 없는 영상은 bt709로 다시 인코딩): `pipeline master <mp4>`
 - 외부 키트: `.venv/bin/python -m pipeline kits` (kits.lock 커밋으로 kits/에 받기)
 
 ## 규칙
