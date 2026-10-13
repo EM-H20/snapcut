@@ -21,7 +21,8 @@ APPLY_CUTS = KIT / ".claude/skills/cut-mistakes/scripts/apply-cuts.mjs"
 HF = "hyperframes@0.7.109"  # 키트 고정 버전 — 0.8 스킬·구성과 섞지 않는다
 RENDER_WORKERS = 1  # 키트 video-storytelling: 병렬 워커는 영상 층을 검게 칠한다
 WORDS_VERSION = 1  # raw.json 만드는 방식이 바뀌면 올린다 — 다시 전사
-SILENCE_FILTER = "silencedetect=noise=-35dB:d=0.3"  # ponytail: 고정 문턱, 잡음 큰 녹음에서 무음을 못 찾으면 조절
+SILENCE_DB = -35  # 무음 문턱 상한. 작게 녹음된 파일은 평균 음량 − SILENCE_BELOW_MEAN까지 내린다(말이 무음으로 잡혀 단어가 사라지지 않게)
+SILENCE_BELOW_MEAN = 20
 STUTTER_GAP = 0.5  # 키트 find-cut-candidates와 같은 값
 FPS = 30
 MAX_SIDE = 1920  # 구성 크기 상한 — 4K 원본도 1080p 급으로 렌더
@@ -117,12 +118,15 @@ def prepare_source(src: Path, track: int, dst: Path) -> None:
     """키트는 영상 1·오디오 1을 요구한다. HDR은 SDR bt709로 바꾼다(키트의 libx264 재인코딩은 색을 다루지 않는다)."""
     stream = next(s for s in ff.probe(src)["streams"] if s["codec_type"] == "video")
     part = dst.with_name(dst.stem + ".part.mp4")
+    encode = ["-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", *BT709]
     if convert.is_hdr(stream):
         w, h = convert._display_size(stream)
         inp, vf = convert.video_input(src, stream, w // 2 * 2, h // 2 * 2)
-        video = ["-vf", vf, "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", *BT709]
-    else:
+        video = ["-vf", vf, *encode]
+    elif stream.get("codec_name") in ("h264", "hevc") and stream.get("pix_fmt") == "yuv420p":
         inp, video = ["-i", str(src)], ["-c:v", "copy"]
+    else:  # ProRes·10비트·4:2:2 등은 mp4에 못 담거나 키트 재인코딩 뒤 Chrome이 못 읽는다
+        inp, video = ["-i", str(src)], encode
     try:
         ff.run(*inp, "-map", "0:v:0", "-map", f"0:a:{track - 1}", *video, "-c:a", "aac", "-b:a", "192k", str(part))
         part.replace(dst)
@@ -130,12 +134,18 @@ def prepare_source(src: Path, track: int, dst: Path) -> None:
         part.unlink(missing_ok=True)
 
 
-def _silences(wav: Path, duration: float) -> list[tuple[float, float]]:
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(wav), "-af", SILENCE_FILTER, "-f", "null", "-"],
+def _ffmpeg_log(wav: Path, af: str) -> str:
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(wav), "-af", af, "-f", "null", "-"],
                        stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace")
     if r.returncode:
         raise RuntimeError(f"무음 찾기 실패: {r.stderr.strip()[-300:]}")
-    return parse_silence(r.stderr, duration)
+    return r.stderr
+
+
+def _silences(wav: Path, duration: float) -> list[tuple[float, float]]:
+    mean = re.search(r"mean_volume: (-?[\d.]+) dB", _ffmpeg_log(wav, "volumedetect"))
+    noise = min(SILENCE_DB, float(mean.group(1)) - SILENCE_BELOW_MEAN) if mean else SILENCE_DB
+    return parse_silence(_ffmpeg_log(wav, f"silencedetect=noise={noise:.1f}dB:d=0.3"), duration)
 
 
 def prepare(proj: Project, file: str | None = None, track: int = 1, engine_factory=WhisperCli.from_env,
@@ -151,10 +161,12 @@ def prepare(proj: Project, file: str | None = None, track: int = 1, engine_facto
     a.mkdir(parents=True, exist_ok=True)
     raw, rj = a / "raw.mp4", a / "raw.json"
     st = src.stat()
+    stale = False
     key = hashlib.sha1(json.dumps([str(src), st.st_size, st.st_mtime_ns, track, model_size(), WORDS_VERSION]).encode()).hexdigest()[:12]
     if not (raw.exists() and rj.exists() and json.loads(rj.read_text(encoding="utf-8")).get("key") == key):
         engine = engine_factory(models)  # whisper-cli가 없으면 여기서 멈춘다 — 모델을 받기 전에
         (download or transcribe.ensure_models)(models)
+        stale = _set_aside(a)
         prepare_source(src, track, raw)
         wav = a / "raw.wav"
         try:
@@ -173,7 +185,18 @@ def prepare(proj: Project, file: str | None = None, track: int = 1, engine_facto
     (a / "candidates.json").write_text(json.dumps({"timeline": "silenced.mp4", "candidates": found}, ensure_ascii=False, indent=1),
                                        encoding="utf-8")
     return {"source": src.name, "words": len(silenced), "source_duration": edl["source_duration"],
-            "edited_duration": edl["edited_duration"], "candidates": found}
+            "edited_duration": edl["edited_duration"], "candidates": found, "stale": stale}
+
+
+def _set_aside(a: Path) -> bool:
+    """새 원본·트랙이면 silenced 시각이 바뀐다 — 예전 시각의 approved-cuts는 따로 두고 그 결과물은 지운다(index.html은 둔다)."""
+    cuts = a / "approved-cuts.json"
+    stale = cuts.exists()
+    if stale:
+        cuts.replace(a / "approved-cuts.stale.json")
+    for n in ("clean.mp4", "transcript.json", "clean.srt"):
+        (a / n).unlink(missing_ok=True)
+    return stale
 
 
 def starter(w: int, h: int, duration: float) -> str:
@@ -220,7 +243,23 @@ def apply(proj: Project) -> dict:
     v = next(s for s in info["streams"] if s["codec_type"] == "video")
     duration = float(info["format"]["duration"])
     index = work(proj) / "index.html"
-    created = not index.exists()
+    created, resized = not index.exists(), None
     if created:
         index.write_text(starter(v["width"], v["height"], duration), encoding="utf-8")
-    return {"duration": duration, "cuts": len(json.loads(cuts.read_text(encoding="utf-8"))["cuts"]), "created": created}
+    else:
+        resized = _resize(index, repr(math.floor(duration * FPS) / FPS))
+    return {"duration": duration, "cuts": len(json.loads(cuts.read_text(encoding="utf-8"))["cuts"]), "created": created,
+            "resized": resized}
+
+
+STARTER_DURATION = re.compile(r'(<(?:div|video|audio) id="(?:edit|clean|clean-audio)"[^>]*?data-duration=")([^"]*)(")')
+
+
+def _resize(index: Path, d: str) -> tuple[str, str] | None:
+    """다시 자르면 clean.mp4 길이가 바뀐다 — 시작 구성의 루트·영상·소리 길이만 맞춘다(Claude가 쓴 오버레이는 그대로)."""
+    page = index.read_text(encoding="utf-8")
+    old = STARTER_DURATION.search(page)
+    if not old or old.group(2) == d:
+        return None
+    index.write_text(STARTER_DURATION.sub(lambda m: m.group(1) + d + m.group(3), page), encoding="utf-8")
+    return old.group(2), d

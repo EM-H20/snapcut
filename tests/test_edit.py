@@ -143,3 +143,57 @@ def test_apply_cuts_writes_transcript_srt_and_keeps_existing_index(tmp_path):
     (edit.work(proj) / "index.html").write_text("mine", encoding="utf-8")
     assert not edit.apply(proj)["created"]
     assert (edit.work(proj) / "index.html").read_text(encoding="utf-8") == "mine"
+
+
+# ---- 최종 검토 수정 ----
+def _src(path, *video_args):
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:r=30:d=1", "-f", "lavfi",
+                    "-i", "sine=frequency=440:duration=1", *video_args, "-c:a", "aac", str(path)], check=True)
+    return path
+
+
+@pytest.mark.parametrize("name,args", [("prores.mov", ["-c:v", "prores_ks"]),
+                                        ("ten.mov", ["-c:v", "libx264", "-pix_fmt", "yuv422p10le"])])
+def test_prepare_source_reencodes_what_chrome_cannot_play(tmp_path, name, args):
+    dst = tmp_path / "raw.mp4"
+    edit.prepare_source(_src(tmp_path / name, *args), 1, dst)
+    v = next(s for s in __import__("pipeline").ff.probe(dst)["streams"] if s["codec_type"] == "video")
+    assert (v["codec_name"], v["pix_fmt"]) == ("h264", "yuv420p")
+
+
+def test_silences_follow_a_quiet_recording(tmp_path):
+    wav = tmp_path / "q.wav"  # 약 -50dB 말소리(사인) + 2초 무음
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+                    "aevalsrc='if(between(t,2.5,4.5),0,0.004*sin(2*PI*440*t))':s=16000:d=6", str(wav)], check=True)
+    sil = edit._silences(wav, 6.0)
+    assert len(sil) == 1 and abs(sil[0][0] - 2.5) < 0.1 and abs(sil[0][1] - 4.5) < 0.1
+
+
+@needs_kit
+def test_recut_updates_starter_durations_and_reports_change(tmp_path):
+    proj = _talk_project(tmp_path)
+    r = edit.prepare(proj, engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
+    a, index = edit.assets(proj), edit.work(proj) / "index.html"
+    (a / "approved-cuts.json").write_text(json.dumps({"cuts": [r["candidates"][0]["cut"]]}), encoding="utf-8")
+    first = edit.apply(proj)
+    index.write_text(index.read_text(encoding="utf-8").replace("<!-- 오버레이", '<div id="mine" class="clip" data-start="0" data-duration="1"></div>\n<!-- 오버레이'), encoding="utf-8")
+    (a / "approved-cuts.json").write_text('{"cuts": []}', encoding="utf-8")
+    second = edit.apply(proj)
+    page = index.read_text(encoding="utf-8")
+    d = repr(int(second["duration"] * 30) / 30)
+    assert second["resized"] == (repr(int(first["duration"] * 30) / 30), d)
+    assert page.count(f'data-duration="{d}"') == 3 and 'id="mine" class="clip" data-start="0" data-duration="1"' in page
+
+
+@needs_kit
+def test_new_source_key_sets_aside_cuts_for_the_old_timeline(tmp_path):
+    proj = _talk_project(tmp_path, tracks=2)
+    run = lambda **k: edit.prepare(proj, engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None, **k)
+    run()
+    a = edit.assets(proj)
+    (a / "approved-cuts.json").write_text('{"cuts": []}', encoding="utf-8")
+    edit.apply(proj)
+    run(track=2)
+    assert not (a / "approved-cuts.json").exists() and (a / "approved-cuts.stale.json").exists()
+    assert not any((a / n).exists() for n in ("clean.mp4", "transcript.json", "clean.srt"))
+    assert (edit.work(proj) / "index.html").exists()

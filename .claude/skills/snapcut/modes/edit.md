@@ -6,7 +6,7 @@
 
 1. **자르기 준비** — `.venv/bin/python -m pipeline edit <이름> [--file 파일] [--track N]`을 `run_in_background`로. 처음이면 Whisper 모델(약 3GB)을 받는다고 먼저 말한다. 하는 일: 원본을 영상 1·목소리 트랙 1로 정리(HDR은 SDR로) → 단어 단위 전사(`assets/raw.json`, 키트 형식) → 키트 무음 컷(`assets/silenced.mp4`) → 실수 후보(`assets/candidates.json`). 출력의 길이 변화를 사용자에게 전한다.
 2. **실수 고르기** — `assets/candidates.json`(키트 후보 + 한국어 말더듬 `k…`)과 `assets/raw.silence-transcript.json`의 문장을 처음부터 읽는다. 키트의 다시 말하기·말 끊김 검출은 영어만 읽으므로 **한국어 다시 말하기는 문장을 읽고 직접 찾는다**(같은 말을 다시 시작한 앞쪽 시도를 자름). 판단 기준은 `kits/hyperframes-student-kit/.claude/skills/cut-mistakes/SKILL.md`. 결과를 `assets/approved-cuts.json`에 `{"cuts": [{"start": 초, "end": 초, "reason": "…"}]}`로 쓴다. 시간은 **silenced.mp4 기준**(silence-transcript의 `start/end`). 자를 게 없으면 `{"cuts": []}`. 애매한 후보는 자르지 않는다.
-3. **적용** — `.venv/bin/python -m pipeline edit <이름> --cuts` → `assets/clean.mp4`, `assets/transcript.json`(clean 기준 단어 시각), `assets/clean.srt`, 그리고 없을 때만 시작 구성 `index.html`(영상 + 소리만). 다시 실행해도 `index.html`은 덮어쓰지 않는다.
+3. **적용** — `.venv/bin/python -m pipeline edit <이름> --cuts` → `assets/clean.mp4`, `assets/transcript.json`(clean 기준 단어 시각), `assets/clean.srt`, 그리고 없을 때만 시작 구성 `index.html`(영상 + 소리만). 다시 실행해도 `index.html`은 덮어쓰지 않고 길이(루트·영상·소리)만 새 clean.mp4에 맞춘다 — `주의: 길이가` 줄이 나오면 오버레이 시각을 새 transcript.json에 다시 맞추고, B롤을 넣었다면 4단계(composite)도 다시 한다. `--file`·`--track`을 바꿔 1단계를 다시 돌리면 예전 approved-cuts는 `approved-cuts.stale.json`으로 밀려나니 새로 쓴다.
 4. **B롤 (선택, Barty-Bart motion-broll)** — 사용자가 B롤·설명 그래픽을 원할 때. `kits/motion-graphics/skills/motion-broll/SKILL.md`를 읽고 그대로 따르되:
    - 작업 폴더(cwd)는 `projects/<이름>/work/edit/` (`./motion/`이 그 안에 생김), 영상은 `assets/clean.mp4`, 자막은 `assets/clean.srt`.
    - 인터뷰의 영상·자막 질문은 위 파일로 대신하고, 밀도·룩만 사용자에게 추천과 함께 정한다.

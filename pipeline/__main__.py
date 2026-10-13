@@ -326,11 +326,15 @@ def cmd_edit(args) -> None:
         index = edit.work(proj) / "index.html"
         print(f"실수 컷 {r['cuts']}구간 적용: {_mmss(r['duration'])} — {edit.assets(proj) / 'clean.mp4'}")
         print(f"{'시작 구성을 만들었습니다' if r['created'] else '기존 구성을 그대로 둡니다'}: {index}")
+        if r["resized"]:
+            print(f"주의: 길이가 {r['resized'][0]}초 → {r['resized'][1]}초로 바뀌어 구성 길이를 맞췄습니다 — 오버레이 시각을 transcript.json과 다시 맞추세요")
         print(f"다음: 오버레이를 {index.name}에 쓰고 `python -m pipeline studio {proj.root.name}`로 확인")
         return
     r = edit.prepare(proj, args.file, int(args.track))
     a = edit.assets(proj)
     print(f"무음 컷: {r['source']} {_mmss(r['source_duration'])} → {_mmss(r['edited_duration'])} (단어 {r['words']}개)")
+    if r["stale"]:
+        print(f"주의: 원본·트랙이 바뀌어 예전 자르기 목록을 {edit.assets(proj) / 'approved-cuts.stale.json'}로 옮겼습니다 (시각이 맞지 않음)")
     print(f"실수 후보 {len(r['candidates'])}개: {a / 'candidates.json'} (시간은 silenced.mp4 기준)")
     print(f"다음: 후보와 {a / 'raw.silence-transcript.json'}의 문장을 읽고 {a / 'approved-cuts.json'}에 "
           f'{{"cuts": [{{"start": 초, "end": 초, "reason": "…"}}]}}를 쓴 뒤 `python -m pipeline edit {proj.root.name} --cuts`')
