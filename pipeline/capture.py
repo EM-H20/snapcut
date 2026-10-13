@@ -31,7 +31,7 @@ def _wait_ready(page, source: str) -> None:
 def render(page_file: Path, out: Path, seconds: float, fps: float = 30, size: tuple[int, int] = (1920, 1080),
            query: str = "render") -> int:
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import Error as PlaywrightError, sync_playwright
     except ImportError:
         raise RuntimeError(INSTALL)
     page_file = Path(page_file).resolve()
@@ -41,7 +41,10 @@ def render(page_file: Path, out: Path, seconds: float, fps: float = 30, size: tu
     enc = _encoder(part, fps)
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch()
+            try:
+                browser = p.chromium.launch()
+            except PlaywrightError as e:  # 패키지는 있는데 브라우저를 안 받은 경우 (pip 업그레이드 뒤 흔함)
+                raise RuntimeError(INSTALL.replace("playwright가 없습니다", "playwright 브라우저가 없습니다")) from e
             try:
                 page = browser.new_page(viewport={"width": size[0], "height": size[1]}, device_scale_factor=1)
                 page.goto(page_file.as_uri() + (f"?{query}" if query else ""))

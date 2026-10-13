@@ -50,3 +50,11 @@ def test_capture_page_without_seek_times_out_in_korean(tmp_path, monkeypatch):
     html.write_text("<html><body>no seek</body></html>", encoding="utf-8")
     with pytest.raises(RuntimeError, match="window.seek"):
         capture.render(html, tmp_path / "o.mp4", seconds=0.2, fps=10, size=(64, 48))
+
+
+def test_capture_without_browser_says_how_to_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "none"))
+    html = tmp_path / "p.html"
+    html.write_text(SYNC, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="playwright install chromium"):
+        capture.render(html, tmp_path / "o.mp4", seconds=0.2, fps=10, size=(64, 48))

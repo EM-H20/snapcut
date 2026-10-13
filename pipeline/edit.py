@@ -163,6 +163,7 @@ def transcribe_file(src: Path, out: Path, engine_factory=WhisperCli.from_env, mo
         raise ValueError(f"{src.name}에 소리가 없습니다")
     engine = engine_factory(models)
     (download or transcribe.ensure_models)(models)
+    out.parent.mkdir(parents=True, exist_ok=True)
     wav = out.with_name(out.stem + ".part.wav")
     try:
         transcribe.extract_wav(src, 1, wav)

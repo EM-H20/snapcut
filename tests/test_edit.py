@@ -217,3 +217,11 @@ def test_transcribe_file_without_audio_says_so(tmp_path):
                     "-pix_fmt", "yuv420p", str(src)], check=True)
     with pytest.raises(ValueError, match="소리가 없습니다"):
         edit.transcribe_file(src, tmp_path / "o.json", engine_factory=lambda m: FakeEngine(TALK), download=lambda m: None)
+
+
+def test_transcribe_file_creates_output_folder(tmp_path):
+    src = tmp_path / "vo.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", str(src)], check=True)
+    out = tmp_path / "transcripts" / "01-hook.json"
+    edit.transcribe_file(src, out, engine_factory=lambda m: FakeEngine([Segment(0.1, 1.0, "안녕")]), download=lambda m: None)
+    assert out.exists()
