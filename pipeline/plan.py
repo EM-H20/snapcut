@@ -301,6 +301,8 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
                 raise ValueError(f"items[{k}]: behindTitle은 1~{BEHIND_TITLE_MAX}자 글자여야 합니다 (사람 뒤에 깔리는 큰 제목): {bt!r}")
             if bt:
                 fade["behindTitle"] = bt.strip()
+                if c.get("width") and c.get("height"):  # 보이는 사진 상자에 글자를 맞춘다 (화면 전체가 아니라)
+                    fade["aspect"] = round(c["width"] / c["height"], 4)
                 fade["solo"] = True  # 분할 화면으로 묶지 않는다
             kb = sel.get("kenBurns")
             if kb is not None and kb not in KEN_BURNS_ANY:
@@ -402,9 +404,12 @@ def resolve_effects(selection: dict) -> dict:
 
 
 def effect_cues(shots: list[dict], music: dict, m_start: float, final: float | None) -> dict:
-    """영상 기준 초: 전환(효과음 휙), 드롭(마지막 후렴 → 영상 안에 없으면 영상 안의 가장 늦은 후렴, 가까운 다운비트로), 박자 강조."""
+    """영상 기준 초: 전환(효과음 휙, 카드 제외), 드롭(마지막 후렴 → 영상 밖이면 후렴 시작 → 릴스처럼 후렴 안에서 시작하면 카드 뒤 첫 다운비트;
+    가까운 다운비트로), 박자 강조."""
     transitions = []
     for s in shots[1:]:
+        if s["type"] == "clip":
+            continue  # 아웃트로 카드의 디졸브는 조용한 끝 — 휙 소리를 붙이지 않는다
         kind = next((t for t in TRANSITIONS if s.get(t)), None)
         if kind:
             v = s[kind]
@@ -413,8 +418,11 @@ def effect_cues(shots: list[dict], music: dict, m_start: float, final: float | N
     hi = next((s["start"] for s in reversed(shots[1:]) if s["type"] == "clip"), shots[-1]["end"]) - ACCENT_TAIL
     db = music.get("downbeats") or []
     snap = (lambda x: min(db, key=lambda d: abs(d - x))) if db else (lambda x: x)
-    # 마지막 후렴이 영상 밖이면(사진이 모자라 곡 중간에 끝남) 영상 안에 있는 가장 늦은 후렴
-    song = next((snap(x) for x in [final, *reversed(music.get("chorus") or [])] if x is not None and lo <= snap(x) - m_start < hi), None)
+    chorus = music.get("chorus") or []  # [후렴 시작, 시작 + 릴스 길이] — 두 번째 값은 후렴이 아니라 창의 끝
+    # 마지막 후렴이 영상 밖이면(사진이 모자라 곡 중간에 끝남) 후렴 시작으로
+    song = next((snap(x) for x in [final, chorus[0] if chorus else None] if x is not None and lo <= snap(x) - m_start < hi), None)
+    if song is None and len(chorus) == 2 and chorus[0] <= m_start + lo <= chorus[1]:  # 릴스: 영상이 후렴 안에서 시작 → 카드 뒤 첫 다운비트
+        song = next((d for d in db if d >= m_start + lo - 1e-6 and d - m_start < hi), None)
     drop = round(song - m_start, 3) if song is not None else None
     accents = []
     if drop is not None:

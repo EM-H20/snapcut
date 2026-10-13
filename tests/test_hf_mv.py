@@ -198,4 +198,15 @@ def test_behind_title_is_big_and_low_enough_to_pass_behind_heads():
     assert "font-size:324px" in page                       # 3글자: 화면 높이의 30%
     shots[1]["behindTitle"] = "가" * 12
     assert "font-size:141px" in mv.build(_sb(shots), "youtube")  # 긴 글자는 폭 88%에 맞춰 줄인다
-    assert "top:16%" in mv.TITLE_CSS
+    assert "top:173px" in mv.build(_sb(shots), "youtube")  # 사진 상자(aspect 없음 = 화면) 위에서 16%
+
+
+def test_behind_title_fits_the_displayed_photo_box():
+    shots = [dict(s) for s in ALL]
+    shots[1].update(behindTitle="인왕산", aspect=0.75)          # 세로 사진을 가로 화면에: 810x1080 상자
+    page = mv.build(_sb(shots), "youtube")
+    assert "left:555px;width:810px;top:173px;font-size:238px" in page
+    sb = _sb(shots)
+    sb["formats"]["youtube"].update(width=1080, height=1920)     # 가로 사진을 세로 화면(릴스)에: 1080x810 상자
+    shots[1]["aspect"] = 4 / 3
+    assert "left:0px;width:1080px;top:685px;font-size:243px" in mv.build(sb, "youtube")

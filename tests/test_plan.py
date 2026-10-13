@@ -620,11 +620,12 @@ def test_cues_transitions_drop_and_accents():
     assert c["accents"] == [20.0, 24.0, 28.0, 32.0, 36.0]           # 2마디마다, 아웃트로 카드 0.5초 전까지
 
 
-def test_cues_drop_falls_back_to_last_chorus_and_shifts_for_reels():
+def test_reels_drop_is_first_downbeat_after_intro_card():
+    """music["chorus"]는 릴스 창 [시작, 시작+45초] — 릴스 영상은 후렴 안에서 시작하니 인트로 카드가 끝난 뒤 첫 다운비트가 드롭."""
     shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 30.0}, {"type": "clip", "start": 30.0, "end": 41.0}]
-    music = dict(MUSIC, chorus=[60.0, 75.3], downbeats=[60.0 + 2.0 * k for k in range(30)])
-    c = plan.effect_cues(shots, music, m_start=60.0, final=None)      # 릴스: 영상 0초 = 곡 60초. 후렴 75.3 → 가까운 다운비트 76
-    assert c["drop"] == 16.0 and c["accents"][:2] == [16.0, 20.0]
+    music = dict(MUSIC, chorus=[60.0, 105.0], downbeats=[60.0 + 2.0 * k for k in range(30)])
+    c = plan.effect_cues(shots, music, m_start=60.0, final=None)
+    assert c["drop"] == 8.0 and c["accents"][:2] == [8.0, 12.0]
 
 
 def test_cues_without_usable_drop_have_no_accents():
@@ -649,9 +650,20 @@ def test_behind_title_text_is_checked(bt):
         resolve_items({"items": [{"id": 0, "behindTitle": bt}]}, CANDS, HL)
 
 
-def test_drop_falls_back_to_last_chorus_inside_a_short_video():
-    """사진이 모자라 곡 중간에 영상이 끝나면 마지막 후렴(곡 142초)은 영상 밖 — 영상 안의 마지막 후렴(69초)으로."""
+def test_drop_falls_back_to_chorus_start_inside_a_short_video():
+    """사진이 모자라 곡 중간에 영상이 끝나면 마지막 후렴(곡 142초)은 영상 밖 — 후렴 시작(chorus[0])으로. chorus[1]은 창 끝이지 후렴이 아니다."""
     shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 89.0}, {"type": "clip", "start": 89.0, "end": 100.0}]
-    music = dict(MUSIC, chorus=[24.0, 70.0], downbeats=[2.0 * k for k in range(80)])
+    music = dict(MUSIC, chorus=[24.1, 69.1], downbeats=[2.0 * k for k in range(80)])
     c = plan.effect_cues(shots, music, m_start=0.0, final=142.0)
-    assert c["drop"] == 70.0 and c["accents"][:2] == [70.0, 74.0]
+    assert c["drop"] == 24.0 and c["accents"][:2] == [24.0, 28.0]
+
+
+def test_outro_card_dissolve_gets_no_whoosh():
+    shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 20.0, "whip": 0.4},
+             {"type": "clip", "start": 20.0, "end": 31.0, "dissolve": 0.8}]
+    assert [c["kind"] for c in plan.effect_cues(shots, MUSIC, 0.0, None)["transitions"]] == ["whip"]
+
+
+def test_behind_title_photo_carries_display_aspect():
+    items = resolve_items({"items": [{"id": 0, "behindTitle": "산"}]}, [dict(CANDS[0], width=1920, height=2560)], HL)
+    assert items[0]["aspect"] == 0.75

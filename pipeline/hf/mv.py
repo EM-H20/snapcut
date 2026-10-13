@@ -52,9 +52,9 @@ FX_CSS = (".fx{position:absolute;pointer-events:none}"
           ".vignette{inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 58%,rgba(0,0,0,.42) 100%);z-index:9002}"
           ".flash{inset:0;background:#fff;opacity:0;z-index:9000}")
 FLASH_PEAK, FLASH_UP, FLASH_DOWN = 0.3, 2, 6  # 프레임
-TITLE_HEIGHT, TITLE_WIDTH = 0.30, 0.88  # 글자 크기: 화면 높이의 30%, 길면 한 줄이 폭 88% 안에 (한글 한 글자 ≈ 1em)
+TITLE_HEIGHT, TITLE_WIDTH, TITLE_TOP = 0.30, 0.88, 0.16  # 사진 상자 기준: 글자 높이 30%, 길면 폭 88% 안에(한글 한 글자 ≈ 1em), 위에서 16%
 TITLE_FONT = '@font-face{font-family:"Apple SD Gothic Neo";src:local("Apple SD Gothic Neo")}'
-TITLE_CSS = (".btitle{position:absolute;left:0;right:0;top:16%;text-align:center;font-family:'Apple SD Gothic Neo',sans-serif;"
+TITLE_CSS = (".btitle{position:absolute;text-align:center;font-family:'Apple SD Gothic Neo',sans-serif;"
              "font-weight:800;letter-spacing:-0.03em;color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.35);white-space:nowrap}")
 
 
@@ -157,8 +157,7 @@ def _shot(i: int, s: dict, sp: dict, fmt: str, fps: int, w: int, h: int, js: lis
         if t == "photo":
             inner = f'<img class="contain" src="{attr(s["src"])}">'
             if s.get("behindTitle"):  # 사진 → 큰 글자 → 같은 상자의 사람 오려낸 PNG: 글자가 사람 뒤로
-                size = min(round(h * TITLE_HEIGHT), round(w * TITLE_WIDTH / len(s["behindTitle"])))  # 머리에 걸칠 만큼 크고 낮게
-                inner += (f'<div id="s{i}-bt" class="btitle" style="font-size:{size}px">{html.escape(s["behindTitle"])}</div>'
+                inner += (f'<div id="s{i}-bt" class="btitle" style="{_title_box(s, w, h)}">{html.escape(s["behindTitle"])}</div>'
                           f'<img class="contain" src="{cutout(fmt, i)}">')
                 js.append(tween(f"#s{i}-bt", {"opacity": 0, "y": round(h * 0.05)}, {"opacity": 1, "y": 0}, T.frame(0.8, fps),
                                 f0 + T.frame(0.2, fps), fps, "power3.out"))
@@ -254,6 +253,14 @@ def build(sb: dict, fmt: str, preview: bool = False) -> str:
     if preview:
         js.append(COPY_JS)
     return page(w, h, total_f, fps, "\n".join(body), js, css)
+
+
+def _title_box(s: dict, w: int, h: int) -> str:
+    """contain으로 보이는 사진 상자 안에 크고 낮게 — 사람 머리에 걸치도록. aspect가 없으면(옛 storyboard) 화면 전체."""
+    a = s.get("aspect") or w / h
+    bw, bh = (w, w / a) if a > w / h else (h * a, h)
+    size = min(round(bh * TITLE_HEIGHT), round(bw * TITLE_WIDTH / len(s["behindTitle"])))
+    return f"left:{round((w - bw) / 2)}px;width:{round(bw)}px;top:{round((h - bh) / 2 + bh * TITLE_TOP)}px;font-size:{size}px"
 
 
 def _effects(fx: dict, plan: dict, total_f: int, fps: int, body: list[str], js: list[str]) -> str:

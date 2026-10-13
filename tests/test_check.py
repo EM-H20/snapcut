@@ -173,3 +173,13 @@ def test_black_gap_under_a_burned_caption_is_still_black(tmp_path):
                     "-map", "[out]", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(mp4)], check=True)
     r = check.check_file(mp4, None, tmp_path / "check")
     assert [i["kind"] for i in r["issues"]] == ["black"]
+
+
+def test_film_look_skips_freeze_check_and_says_so():
+    sb = {"effects": {"filmLook": True}, "formats": {"youtube": {"shots": [
+        {"type": "clip", "start": 0.0, "end": 2.0}, {"type": "video", "start": 2.0, "end": 6.0}]}}}
+    view = check.plan_view(sb, "youtube")
+    assert view["skip_freeze"]
+    issues = check.judge([], [(3.0, 4.0)], None, {"duration": 6.0, "has_audio": False, "color": ("bt709",) * 3}, view)
+    assert issues == []  # 노이즈가 2프레임마다 움직여 멈춤 검출이 원래 안 된다 — 거짓 통과 대신 건너뛰고 알린다
+    assert "멈춤 검사 건너뜀" in check.summary("x.mp4", {"ok": True, "issues": [], "loudness": None, "sheets": [], "notes": check.notes(view)})

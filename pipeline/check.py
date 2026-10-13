@@ -60,7 +60,12 @@ def plan_view(sb: dict | None, fmt: str | None) -> dict | None:
         if s["type"] == "credits":  # 크레딧은 마지막 2초를 항상 검게 덮는다 (hf/mv.py 크레딧)
             intended.append((round(s["end"] - CREDITS_FADE, 3), s["end"]))
     return {"duration": shots[-1]["end"], "cuts": [s["start"] for s in shots[1:]], "intended_black": intended,
-            "video_spans": [(s["start"], round(s["end"] - s.get("freeze", 0), 3)) for s in shots if s["type"] == "video"]}
+            "video_spans": [(s["start"], round(s["end"] - s.get("freeze", 0), 3)) for s in shots if s["type"] == "video"],
+            "skip_freeze": bool(sb.get("effects", {}).get("filmLook"))}  # 필름 노이즈가 2프레임마다 움직여 멈춤이 검출되지 않는다
+
+
+def notes(view: dict | None) -> list[str]:
+    return ["필름 노이즈(filmLook)가 켜져 있어 멈춤 검사 건너뜀 — 영상 장면은 시트로 직접 확인"] if view and view.get("skip_freeze") else []
 
 
 def format_of(path: Path, sb: dict | None) -> str | None:
@@ -78,7 +83,7 @@ def judge(black, freezes, loud, info: dict, view: dict | None) -> list[dict]:
             issues.append({"kind": "black", "at": a, "detail": f"{a:.3f}–{b:.3f}초 검은 화면"})
     for a, b in freezes:
         end = dur if b is None else b
-        if any(a < y - 0.05 and end > x + 0.05 for x, y in (view["video_spans"] if view else [])):
+        if any(a < y - 0.05 and end > x + 0.05 for x, y in (view["video_spans"] if view and not view.get("skip_freeze") else [])):
             issues.append({"kind": "freeze", "at": a, "detail": f"{a:.3f}–{end:.3f}초 영상 멈춤"})
     if info["has_audio"]:
         if loud is None:
@@ -153,10 +158,10 @@ def check_file(path: Path, view: dict | None, out_dir: Path) -> dict:
     issues = judge(black, parse_freeze(log), loud, info, view)
     cuts = view["cuts"] if view else parse_cuts(log)
     sheets = make_sheets(path, [0.0, *cuts], info["duration"], out_dir)
-    return {"ok": not issues, "issues": issues, "loudness": loud, "sheets": [str(p) for p in sheets]}
+    return {"ok": not issues, "issues": issues, "loudness": loud, "sheets": [str(p) for p in sheets], "notes": notes(view)}
 
 
 def summary(name: str, r: dict) -> str:
     head = f"점검 {'통과' if r['ok'] else '실패'}: {name}"
     loud = f" ({r['loudness']['I']:.1f} LUFS, peak {r['loudness']['TP']:.1f})" if r["loudness"] else ""
-    return "\n".join([head + loud, *(f"  - {i['detail']}" for i in r["issues"]), f"  화면 시트: {', '.join(r['sheets'])}"])
+    return "\n".join([head + loud, *(f"  - {i['detail']}" for i in r["issues"]), *(f"  참고: {n}" for n in r.get("notes", [])), f"  화면 시트: {', '.join(r['sheets'])}"])

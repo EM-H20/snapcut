@@ -21,18 +21,38 @@ def test_render_passes_version_and_workers(monkeypatch, tmp_path):
 
 
 def test_cutouts_run_remove_background_only_for_behind_title(monkeypatch, tmp_path):
+    from PIL import Image
+    (tmp_path / "media").mkdir()
+    Image.new("RGB", (8, 8)).save(tmp_path / "media" / "b.jpg")
     calls = []
     monkeypatch.setattr(engine.subprocess, "run", lambda args, **k: calls.append(args) or subprocess.CompletedProcess(args, 0, "", ""))
     shots = [{"type": "photo", "src": "media/a.jpg"}, {"type": "photo", "src": "media/b.jpg", "behindTitle": "산"}]
     engine.cutouts(tmp_path, "youtube", shots)
     assert len(calls) == 1
     a = calls[0]
-    assert a[:4] == ["npx", "-y", engine.HF, "remove-background"] and a[4] == str(tmp_path / "media/b.jpg")
+    assert a[:4] == ["npx", "-y", engine.HF, "remove-background"] and a[4] == str(tmp_path / "cutout" / "youtube_s1.src.jpg")
+    assert not (tmp_path / "cutout" / "youtube_s1.src.jpg").exists()  # 세운 사본은 지운다
     assert a[a.index("-o") + 1] == str(tmp_path / "cutout" / "youtube_s1.png") and a[a.index("--quality") + 1] == "best"
 
 
 def test_cutouts_failure_is_korean(monkeypatch, tmp_path):
     import pytest
+    from PIL import Image
+    (tmp_path / "media").mkdir()
+    Image.new("RGB", (8, 8)).save(tmp_path / "media" / "b.jpg")
     monkeypatch.setattr(engine.subprocess, "run", lambda args, **k: subprocess.CompletedProcess(args, 1, "", "boom"))
     with pytest.raises(RuntimeError, match="오려내기"):
         engine.cutouts(tmp_path, "youtube", [{"type": "photo", "src": "media/b.jpg", "behindTitle": "산"}])
+
+
+def test_cutouts_feed_an_upright_copy_of_exif_rotated_photos(monkeypatch, tmp_path):
+    from PIL import Image
+    (tmp_path / "src").mkdir()
+    img = Image.new("RGB", (40, 20), "red")
+    exif = img.getexif()
+    exif[0x0112] = 6  # 오른쪽으로 90도 돌려 보여야 하는 아이폰 사진
+    img.save(tmp_path / "src" / "a.jpg", exif=exif)
+    seen = []
+    monkeypatch.setattr(engine.subprocess, "run", lambda args, **k: seen.append(Image.open(args[4]).size) or subprocess.CompletedProcess(args, 0, "", ""))
+    engine.cutouts(tmp_path, "reels", [{"type": "photo", "src": "src/a.jpg", "behindTitle": "산"}])
+    assert seen == [(20, 40)]  # 크롬이 보여 주는 방향 그대로 오려낸다

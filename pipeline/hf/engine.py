@@ -2,6 +2,8 @@
 import subprocess
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 from .. import ff, kits
 from . import mv
 
@@ -42,7 +44,13 @@ def cutouts(root: Path, fmt: str, shots: list[dict]) -> None:
         if s["type"] == "photo" and s.get("behindTitle"):
             dst = root / mv.cutout(fmt, i)
             dst.parent.mkdir(exist_ok=True)
-            r = subprocess.run(["npx", "-y", HF, "remove-background", str(root / s["src"]), "-o", str(dst), "--quality", "best"],
-                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+            up = dst.with_name(dst.stem + ".src.jpg")  # 크롬은 EXIF 회전대로 보여 주지만 remove-background는 무시한다 — 바로 세운 사본을 준다
+            with Image.open(root / s["src"]) as im:
+                ImageOps.exif_transpose(im).convert("RGB").save(up, quality=95, icc_profile=im.info.get("icc_profile"))
+            try:
+                r = subprocess.run(["npx", "-y", HF, "remove-background", str(up), "-o", str(dst), "--quality", "best"],
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
+            finally:
+                up.unlink(missing_ok=True)
             if r.returncode:
                 raise RuntimeError(f"인물 오려내기 실패 ({s['src']}): {(r.stderr or r.stdout)[-400:]}")
