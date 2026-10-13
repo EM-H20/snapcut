@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import check, contact, convert, curate, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
+from . import check, contact, convert, curate, edit, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
 from .hf import engine, long as hf_long, mv
 from .paths import SHARED, Project, project
 
@@ -304,6 +304,16 @@ def cmd_transcribe(args) -> None:
     print("큰 소리 순간: " + ", ".join(_mmss(s) for s in transcribe.loud_moments(db)))
 
 
+def cmd_edit(args) -> None:
+    proj = project(args.project)
+    r = edit.prepare(proj, args.file, int(args.track))
+    a = edit.assets(proj)
+    print(f"무음 컷: {r['source']} {_mmss(r['source_duration'])} → {_mmss(r['edited_duration'])} (단어 {r['words']}개)")
+    print(f"실수 후보 {len(r['candidates'])}개: {a / 'candidates.json'} (시간은 silenced.mp4 기준)")
+    print(f"다음: 후보와 {a / 'raw.silence-transcript.json'}의 문장을 읽고 {a / 'approved-cuts.json'}에 "
+          f'{{"cuts": [{{"start": 초, "end": 초, "reason": "…"}}]}}를 쓴 뒤 `python -m pipeline edit {proj.root.name} --cuts`')
+
+
 def run_checks(proj: Project, files: list[Path], fmt: str | None = None) -> bool:
     """mp4들을 점검하고 output/check.json에 남긴다. 전부 통과하면 True."""
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8")) if proj.storyboard.exists() else None
@@ -369,6 +379,10 @@ def main(argv=None) -> None:
     tr.add_argument("project")
     tr.add_argument("--track", default="1", help="전사할 오디오 트랙 번호. 사람별 트랙이면 2,3처럼 여러 개 (1부터, OBS 1번 = 전체 믹스)")
     tr.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
+    ed = sub.add_parser("edit")
+    ed.add_argument("project")
+    ed.add_argument("--file", default=None, help="영상소스에 영상이 여러 개일 때 고를 파일")
+    ed.add_argument("--track", default="1", help="목소리 오디오 트랙 번호 (1부터)")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)
@@ -382,12 +396,13 @@ def main(argv=None) -> None:
     ck.add_argument("--format", default=None, help="storyboard 형식 이름 (파일 이름으로 못 찾을 때)")
     args = p.parse_args(argv)
     needs = ([] if args.cmd in ("music", "kits") else [("ffmpeg", "brew install ffmpeg")]) + \
-        ([("npx", "Node.js 설치")] if args.cmd in ("plan", "studio", "render") else [])
+        ([("npx", "Node.js 설치")] if args.cmd in ("plan", "studio", "render") else []) + \
+        ([("node", "Node.js 설치")] if args.cmd == "edit" else [])
     for tool, hint in needs:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "edit": cmd_edit, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

@@ -337,3 +337,21 @@ def test_studio_writes_preview_index_and_starts_hf(monkeypatch, tmp_path):
     cli.main(["studio", str(proj.root), "--format", "reels"])
     index = (proj.cache / "index.html").read_text()
     assert seen == [proj.cache] and 'data-width="1080"' in index and 'class="clip tag"' in index
+
+
+def test_edit_reports_cut_and_next_step(monkeypatch, tmp_path, capsys):
+    from pipeline import edit
+    (tmp_path / "영상소스").mkdir()
+    seen = {}
+
+    def prepare(proj, file=None, track=1):
+        seen.update(file=file, track=track)
+        return {"source": "talk.mov", "words": 120, "source_duration": 65.0, "edited_duration": 52.5,
+                "candidates": [{"id": "k001"}, {"id": "c001"}]}
+    monkeypatch.setattr(edit, "prepare", prepare)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["edit", str(tmp_path), "--track", "2", "--file", "talk.mov"])
+    out = capsys.readouterr().out
+    assert seen == {"file": "talk.mov", "track": 2}
+    assert "1:05 → 0:52" in out and "실수 후보 2개" in out
+    assert "approved-cuts.json" in out and "--cuts" in out
