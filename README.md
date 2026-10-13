@@ -85,6 +85,9 @@ Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라�
 - 작업 폴더: `projects/<이름>/work/edit/` — 자를 구간은 `assets/approved-cuts.json`, 화면은 `index.html`
 - 완성본: `output/<이름>_edit.mp4` + `.srt`
 
+### 제품 출시·소개 영상
+영상소스 없이 `/snapcut <이름> "<제품> 출시 영상 만들어줘"`. 요청에 맞춰 세 키트 중 하나로 만든다: 내레이션 런치 영상(product-launch-motion), 차트·브랜드 효과·릴스 루프(motion-graphics-skills), 음악에 맞춘 필름·레퍼런스 따라 만들기(claude-motion-design). 한국어 내레이션은 macOS 기본 목소리, 유료 키 없음. 처음 한 번 `.venv/bin/pip install -e '.[promo]' && .venv/bin/python -m playwright install chromium`(install.sh가 함).
+
 ### 명령어로 직접 쓰기
 Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 ```bash
@@ -98,6 +101,8 @@ Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 | `transcribe <영상명> [--track 2,3] [--file 이름]` | 롱폼: 오디오 트랙(여러 개면 사람별)을 Whisper로 전사(`.cache/transcript.json`) + 큰 소리 순간 |
 | `plan <영상명>` | `selection.json` → 타임라인(`.cache/storyboard.json`) + 인트로/아웃트로 카드. `longform.json`이 있으면 롱폼 계획 |
 | `edit <영상명> [--file 이름] [--track N]` | 편집: 단어 전사 → 쉼 자르기 → 실수 후보(`work/edit/assets/`). `--cuts`면 `approved-cuts.json` 적용 + 시작 구성 |
+| `words <음성> [--out json]` | 음성 → 단어 시각 JSON (키트 내레이션 타이밍용) |
+| `capture <페이지.html> <mp4> --seconds 8 [--size 1080x1920]` | `window.seek` 페이지를 프레임마다 찍어 mp4로 |
 | `studio <영상명>` | 미리보기 열기 |
 | `render <영상명> --formats reels,youtube` | 완성 영상 렌더 |
 
