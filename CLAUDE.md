@@ -3,7 +3,8 @@
 영상 만들기 전부의 입구(추억 뮤비·롱폼·편집·홍보·애니메이션·웹). 사용은 `/snapcut <이름> <요청>`.
 
 ## 구조
-- `pipeline/` (Python): 변환·선별·분석·타임라인. `python -m pipeline <convert|prepare|plan|studio|render|music>`
+- `pipeline/` (Python): 변환·선별·분석·타임라인. `python -m pipeline <convert|prepare|plan|edit|studio|render|music>`
+- `pipeline/edit.py`: edit 모드 — whisper 단어 전사 → student-kit 컷 스크립트(kits/) → `work/edit/` 구성 (hyperframes@0.7.109)
 - `pipeline/hf/`: storyboard → HyperFrames 구성 HTML(뮤비·롱폼·쇼츠)과 렌더·미리보기 실행 (hyperframes@0.8.149)
 - `공용/음악/` 곡 라이브러리(git 제외), `공용/인트로아웃트로/<템플릿>/` HyperFrames 카드
 - `projects/<이름>/영상소스/` 원본(읽기 전용), `selection.json`(Claude 작성), `.cache/`, `output/` — 전부 git 제외
