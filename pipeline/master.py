@@ -57,7 +57,8 @@ def master(path: Path) -> list[str]:
              ["-map", "0:a", "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "320k"] if af else ["-map", "0:a", "-c:a", "copy"])
     tmp = path.with_name(path.stem + ".master" + path.suffix)
     try:
-        ff.run("-i", str(path), "-map", "0:v", *video, *audio, "-movflags", "+faststart", str(tmp))
+        # loudnorm은 끝에 소리를 0.1초쯤 덧붙인다 — 원래 길이로 자르지 않으면 점검의 길이 검사가 실패한다
+        ff.run("-i", str(path), "-map", "0:v", *video, *audio, "-t", f"{info['duration']:.6f}", "-movflags", "+faststart", str(tmp))
         tmp.replace(path)
     finally:
         tmp.unlink(missing_ok=True)

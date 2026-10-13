@@ -82,3 +82,12 @@ def test_partly_tagged_video_is_converted(tmp_path):
     mp4 = _untagged_red(tmp_path / "half.mp4", extra=("-color_primaries", "bt709"))
     assert "color" in master.master(mp4)
     assert check.media_info(mp4)["color"] == ("bt709", "bt709", "bt709")
+
+
+def test_loudness_master_keeps_audio_as_long_as_the_video(tmp_path):
+    """loudnorm은 끝에 소리를 덧붙여(약 0.1초) 점검의 길이 검사가 실패했다 — 원래 길이로 자른다."""
+    mp4 = tmp_path / "hot.mp4"
+    _av(mp4, volume=8)
+    assert master.master(mp4) == ["loudness"]
+    durs = {s["codec_type"]: float(s["duration"]) for s in __import__("pipeline").ff.probe(mp4)["streams"]}
+    assert abs(durs["audio"] - durs["video"]) < 1 / 30 + 1e-3
