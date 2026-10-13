@@ -351,8 +351,8 @@ def cmd_words(args) -> None:
 
 def cmd_capture(args) -> None:
     page = Path(args.page).expanduser()
-    if not page.is_file():
-        raise SystemExit(f"페이지가 없습니다: {page}")
+    if not page.exists():
+        raise SystemExit(f"페이지(또는 빌드된 사이트 폴더)가 없습니다: {page}")
     try:
         size = tuple(int(x) for x in args.size.lower().split("x"))
         assert len(size) == 2
@@ -444,7 +444,7 @@ def main(argv=None) -> None:
     wd = sub.add_parser("words")
     wd.add_argument("file", help="음성(또는 영상) 파일")
     wd.add_argument("--out", default=None, help="결과 JSON (기본: <파일>.words.json)")
-    cp = sub.add_parser("capture", help="window.seek(t) 페이지 → mp4")
+    cp = sub.add_parser("capture", help="window.seek(t) 페이지(또는 빌드된 사이트 폴더) → mp4")
     cp.add_argument("page")
     cp.add_argument("out")
     cp.add_argument("--seconds", type=float, required=True)

@@ -449,3 +449,13 @@ def test_master_command_says_what_it_did(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli.check, "media_info", lambda p: {"has_audio": False})
     cli.main(["master", str(f)])
     assert "소리 없음 — 바꿀 것 없음: a.mp4" in capsys.readouterr().out
+
+
+def test_capture_command_accepts_site_folder(monkeypatch, tmp_path):
+    from pipeline import capture
+    seen = []
+    monkeypatch.setattr(capture, "render", lambda page, out, seconds, fps, size: seen.append(page) or 30)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    (tmp_path / "site").mkdir()
+    cli.main(["capture", str(tmp_path / "site"), str(tmp_path / "o.mp4"), "--seconds", "1"])
+    assert seen == [tmp_path / "site"]
