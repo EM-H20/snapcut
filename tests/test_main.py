@@ -366,3 +366,46 @@ def test_edit_cuts_applies_and_points_to_studio(monkeypatch, tmp_path, capsys):
     cli.main(["edit", str(tmp_path), "--cuts"])
     out = capsys.readouterr().out
     assert "3구간" in out and "0:50" in out and "index.html" in out and "studio" in out
+
+
+def _edit_project(tmp_path):
+    from pipeline import edit
+    (tmp_path / "영상소스").mkdir()
+    proj = Project(tmp_path)
+    edit.assets(proj).mkdir(parents=True)
+    (edit.work(proj) / "index.html").write_text("<html></html>")
+    (edit.assets(proj) / "clean.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\n안녕\n", encoding="utf-8")
+    return proj
+
+
+def test_render_edit_project_on_kit_hyperframes(monkeypatch, tmp_path):
+    from pipeline import edit
+    from pipeline.hf import engine
+    proj = _edit_project(tmp_path)
+    calls = []
+
+    def render(root, comp, out, **kw):
+        calls.append((root, comp, out, kw))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"x")
+    monkeypatch.setattr(engine, "render", render)
+    monkeypatch.setattr(cli.master, "master", lambda p: False)
+    checked = []
+    monkeypatch.setattr(cli.check, "check_file", lambda p, v, d: checked.append((p, v)) or {"ok": True, "issues": [], "loudness": None, "sheets": []})
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["render", str(proj.root)])
+    out = proj.output / f"{proj.root.name}_edit.mp4"
+    assert calls == [(edit.work(proj), "index.html", out, {"hf": edit.HF, "workers": 1})]
+    assert out.with_suffix(".srt").read_text(encoding="utf-8").endswith("안녕\n")
+    assert checked == [(out, None)]  # 계획 파일 없음 → 처음·끝 2초만 의도한 검정
+
+
+def test_studio_edit_project_previews_work_dir(monkeypatch, tmp_path):
+    from pipeline import edit
+    from pipeline.hf import engine
+    proj = _edit_project(tmp_path)
+    seen = []
+    monkeypatch.setattr(engine, "preview", lambda root, **kw: seen.append((root, kw)))
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    cli.main(["studio", str(proj.root)])
+    assert seen == [(edit.work(proj), {"hf": edit.HF})]

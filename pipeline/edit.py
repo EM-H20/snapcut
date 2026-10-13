@@ -18,6 +18,8 @@ KIT = kits.KITS_DIR / "hyperframes-student-kit"
 CUT_SILENCES = KIT / ".claude/skills/cut-silences/scripts/cut-silences.mjs"
 FIND_CUTS = KIT / ".claude/skills/cut-mistakes/scripts/find-cut-candidates.mjs"
 APPLY_CUTS = KIT / ".claude/skills/cut-mistakes/scripts/apply-cuts.mjs"
+HF = "hyperframes@0.7.109"  # 키트 고정 버전 — 0.8 스킬·구성과 섞지 않는다
+RENDER_WORKERS = 1  # 키트 video-storytelling: 병렬 워커는 영상 층을 검게 칠한다
 WORDS_VERSION = 1  # raw.json 만드는 방식이 바뀌면 올린다 — 다시 전사
 SILENCE_FILTER = "silencedetect=noise=-35dB:d=0.3"  # ponytail: 고정 문턱, 잡음 큰 녹음에서 무음을 못 찾으면 조절
 STUTTER_GAP = 0.5  # 키트 find-cut-candidates와 같은 값

@@ -211,6 +211,8 @@ def section_report(sec: dict) -> str:
 
 def cmd_studio(args) -> None:
     proj = project(args.project)
+    if (edit.work(proj) / "index.html").exists():
+        return engine.preview(edit.work(proj), hf=edit.HF)
     if not proj.storyboard.exists():
         raise SystemExit(f"먼저 plan을 실행하세요: python -m pipeline plan {args.project}")
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))
@@ -254,8 +256,21 @@ def _render_longform(proj: Project, sb: dict, formats: list[str]) -> list[Path]:
     return outs
 
 
+def _render_edit(proj: Project) -> None:
+    out = proj.output / f"{proj.root.name}_edit.mp4"
+    try:
+        engine.render(edit.work(proj), "index.html", out, hf=edit.HF, workers=edit.RENDER_WORKERS)
+    except RuntimeError as e:
+        raise SystemExit(f"{e} — 렌더 실패")
+    shutil.copyfile(edit.assets(proj) / "clean.srt", out.with_suffix(".srt"))
+    print(f"완성: {out} (+ {out.with_suffix('.srt').name})")
+    finish(proj, [out])
+
+
 def cmd_render(args) -> None:
     proj = project(args.project)
+    if (edit.work(proj) / "index.html").exists():
+        return _render_edit(proj)
     if not proj.storyboard.exists():
         raise SystemExit(f"먼저 plan을 실행하세요: python -m pipeline plan {args.project}")
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8"))

@@ -9,10 +9,11 @@ HF = f"hyperframes@{kits.HF_VERSION}"
 RENDER_TIMEOUT = 3600
 
 
-def render(root: Path, comp: str, out: Path) -> None:
+def render(root: Path, comp: str, out: Path, hf: str = HF, workers: int | None = None) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
+    w = ["-w", str(workers)] if workers else []
     try:
-        r = subprocess.run(["npx", "-y", HF, "render", str(root), "-c", comp, "-f", "30", "-o", str(out), "--quiet"],
+        r = subprocess.run(["npx", "-y", hf, "render", str(root), "-c", comp, "-f", "30", *w, "-o", str(out), "--quiet"],
                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=RENDER_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"HyperFrames 렌더가 {RENDER_TIMEOUT // 60}분 안에 끝나지 않았습니다 ({out.name})")
@@ -20,9 +21,9 @@ def render(root: Path, comp: str, out: Path) -> None:
         raise RuntimeError(f"HyperFrames 렌더 실패 ({out.name}): {(r.stderr or r.stdout)[-800:]}")
 
 
-def preview(root: Path) -> None:
+def preview(root: Path, hf: str = HF) -> None:
     """root/index.html을 HF Studio로 띄운다 (끝날 때까지 돈다 — 백그라운드로 실행)."""
-    subprocess.run(["npx", "-y", HF, "preview", str(root)])
+    subprocess.run(["npx", "-y", hf, "preview", str(root)])
 
 
 def freeze_stills(root: Path, fmt: str, shots: list[dict]) -> None:
