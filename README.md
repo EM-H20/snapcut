@@ -88,6 +88,9 @@ Claude가 Whisper로 전사하고, 말·큰 소리·화면을 보고 하이라�
 ### 제품 출시·소개 영상
 영상소스 없이 `/snapcut <이름> "<제품> 출시 영상 만들어줘"`. 요청에 맞춰 세 키트 중 하나로 만든다: 내레이션 런치 영상(product-launch-motion), 차트·브랜드 효과·릴스 루프(motion-graphics-skills), 음악에 맞춘 필름·레퍼런스 따라 만들기(claude-motion-design). 한국어 내레이션은 macOS 기본 목소리, 유료 키 없음. 처음 한 번 `.venv/bin/pip install -e '.[promo]' && .venv/bin/python -m playwright install chromium`(install.sh가 함).
 
+### 짧은 애니메이션
+`/snapcut <이름> "<주제> 설명 애니메이션 만들어줘"`. 손그림·수학·종이 같은 캔버스 화풍(animate), 장면이 이어지는 모션그래픽과 코드로 만든 효과음(claude-motion), Remotion 릴스(claude-remotion-skill) 중 하나로 만든다. 한국어 내레이션은 macOS 기본 목소리, 유료 키 없음.
+
 ### 명령어로 직접 쓰기
 Claude 없이도 각 단계를 실행할 수 있다(저장소 루트에서).
 ```bash
