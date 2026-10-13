@@ -402,7 +402,7 @@ def resolve_effects(selection: dict) -> dict:
 
 
 def effect_cues(shots: list[dict], music: dict, m_start: float, final: float | None) -> dict:
-    """영상 기준 초: 전환(효과음 휙), 드롭(마지막 후렴 첫 다운비트, 없으면 마지막 후렴 추정 → 가까운 다운비트), 박자 강조."""
+    """영상 기준 초: 전환(효과음 휙), 드롭(마지막 후렴 → 영상 안에 없으면 영상 안의 가장 늦은 후렴, 가까운 다운비트로), 박자 강조."""
     transitions = []
     for s in shots[1:]:
         kind = next((t for t in TRANSITIONS if s.get(t)), None)
@@ -411,11 +411,11 @@ def effect_cues(shots: list[dict], music: dict, m_start: float, final: float | N
             transitions.append({"t": round(s["start"] - (v / 2 if kind in ("blur", "whip") else 0), 3), "kind": kind, "len": v})
     lo = shots[0]["end"] if shots and shots[0]["type"] == "clip" else 0.0
     hi = next((s["start"] for s in reversed(shots[1:]) if s["type"] == "clip"), shots[-1]["end"]) - ACCENT_TAIL
-    song = final if final is not None else (music.get("chorus") or [None])[-1]
     db = music.get("downbeats") or []
-    if song is not None and db:
-        song = min(db, key=lambda d: abs(d - song))
-    drop = round(song - m_start, 3) if song is not None and lo <= song - m_start < hi else None
+    snap = (lambda x: min(db, key=lambda d: abs(d - x))) if db else (lambda x: x)
+    # 마지막 후렴이 영상 밖이면(사진이 모자라 곡 중간에 끝남) 영상 안에 있는 가장 늦은 후렴
+    song = next((snap(x) for x in [final, *reversed(music.get("chorus") or [])] if x is not None and lo <= snap(x) - m_start < hi), None)
+    drop = round(song - m_start, 3) if song is not None else None
     accents = []
     if drop is not None:
         after = [d - m_start for d in db if d >= song - 1e-6]

@@ -647,3 +647,11 @@ def test_storyboard_with_effects_has_cues_and_behind_title_photo():
 def test_behind_title_text_is_checked(bt):
     with pytest.raises(ValueError, match="behindTitle"):
         resolve_items({"items": [{"id": 0, "behindTitle": bt}]}, CANDS, HL)
+
+
+def test_drop_falls_back_to_last_chorus_inside_a_short_video():
+    """사진이 모자라 곡 중간에 영상이 끝나면 마지막 후렴(곡 142초)은 영상 밖 — 영상 안의 마지막 후렴(69초)으로."""
+    shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 89.0}, {"type": "clip", "start": 89.0, "end": 100.0}]
+    music = dict(MUSIC, chorus=[24.0, 70.0], downbeats=[2.0 * k for k in range(80)])
+    c = plan.effect_cues(shots, music, m_start=0.0, final=142.0)
+    assert c["drop"] == 70.0 and c["accents"][:2] == [70.0, 74.0]
