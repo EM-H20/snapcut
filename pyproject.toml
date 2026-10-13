@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+promo = ["playwright>=1.50"]  # pipeline capture (window.seek 페이지 → mp4)
 
 [build-system]
 requires = ["setuptools>=75"]

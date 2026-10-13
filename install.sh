@@ -39,7 +39,8 @@ fi
 say "Python 패키지 설치 (.venv, $("$PY" --version))"
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e '.[dev]'
+.venv/bin/pip install -q -e '.[dev,promo]'
+.venv/bin/python -m playwright install chromium  # pipeline capture (키트 seek 페이지 → mp4)
 
 say "HyperFrames 내려받기 + 작업 스킬 설치"
 npx -y hyperframes@0.8.149 --version >/dev/null

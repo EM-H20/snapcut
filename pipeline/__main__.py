@@ -8,7 +8,7 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-from . import check, contact, convert, curate, edit, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
+from . import capture, check, contact, convert, curate, edit, ff, highlights, intro, kits, longform, master, music, plan, render_src, template, transcribe
 from .hf import engine, long as hf_long, mv
 from .paths import SHARED, Project, project
 
@@ -349,6 +349,19 @@ def cmd_words(args) -> None:
     print(f"단어 {len(d['words'])}개, {d['audio_duration_secs']:.1f}초 → {out}")
 
 
+def cmd_capture(args) -> None:
+    page = Path(args.page).expanduser()
+    if not page.is_file():
+        raise SystemExit(f"페이지가 없습니다: {page}")
+    try:
+        size = tuple(int(x) for x in args.size.lower().split("x"))
+        assert len(size) == 2
+    except (ValueError, AssertionError):
+        raise SystemExit(f"--size는 WxH 형태여야 합니다 (예: 1080x1920): {args.size}")
+    n = capture.render(page, Path(args.out).expanduser(), args.seconds, args.fps, size)
+    print(f"완성: {args.out} ({n}프레임, {args.fps:g}fps, 소리 없음)")
+
+
 def run_checks(proj: Project, files: list[Path], fmt: str | None = None) -> bool:
     """mp4들을 점검하고 output/check.json에 남긴다. 전부 통과하면 True."""
     sb = json.loads(proj.storyboard.read_text(encoding="utf-8")) if proj.storyboard.exists() else None
@@ -422,6 +435,12 @@ def main(argv=None) -> None:
     wd = sub.add_parser("words")
     wd.add_argument("file", help="음성(또는 영상) 파일")
     wd.add_argument("--out", default=None, help="결과 JSON (기본: <파일>.words.json)")
+    cp = sub.add_parser("capture", help="window.seek(t) 페이지 → mp4")
+    cp.add_argument("page")
+    cp.add_argument("out")
+    cp.add_argument("--seconds", type=float, required=True)
+    cp.add_argument("--fps", type=float, default=30.0)
+    cp.add_argument("--size", default="1920x1080")
     r = sub.add_parser("render")
     r.add_argument("project")
     r.add_argument("--formats", default=None)
@@ -441,7 +460,7 @@ def main(argv=None) -> None:
         if not shutil.which(tool):
             raise SystemExit(f"{tool}이(가) 없습니다. 설치: {hint}")
     handlers = {"convert": cmd_convert, "prepare": cmd_prepare, "plan": cmd_plan,
-                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "edit": cmd_edit, "words": cmd_words, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
+                "studio": cmd_studio, "render": cmd_render, "music": cmd_music, "transcribe": cmd_transcribe, "edit": cmd_edit, "words": cmd_words, "capture": cmd_capture, "kits": cmd_kits, "check": cmd_check, "master": cmd_master}
     try:
         handlers[args.cmd](args)
     except (ValueError, RuntimeError, FileNotFoundError) as e:

@@ -423,3 +423,16 @@ def test_words_command_writes_next_to_file(monkeypatch, tmp_path, capsys):
     cli.main(["words", str(tmp_path / "01.wav")])
     assert seen == [(tmp_path / "01.wav", tmp_path / "01.words.json")]
     assert "단어 2개" in capsys.readouterr().out
+
+
+def test_capture_command_parses_size(monkeypatch, tmp_path, capsys):
+    from pipeline import capture
+    seen = []
+    monkeypatch.setattr(capture, "render", lambda page, out, seconds, fps, size: seen.append((page, out, seconds, fps, size)) or 240)
+    monkeypatch.setattr(cli.shutil, "which", lambda t: f"/bin/{t}")
+    (tmp_path / "e.html").write_text("x")
+    cli.main(["capture", str(tmp_path / "e.html"), str(tmp_path / "o.mp4"), "--seconds", "8", "--size", "1080x1920"])
+    assert seen == [(tmp_path / "e.html", tmp_path / "o.mp4", 8.0, 30.0, (1080, 1920))]
+    assert "240프레임" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="WxH"):
+        cli.main(["capture", str(tmp_path / "e.html"), str(tmp_path / "o.mp4"), "--seconds", "8", "--size", "big"])
