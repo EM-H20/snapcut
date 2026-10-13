@@ -3,6 +3,9 @@ import statistics
 
 FPS = 30
 INTRO_SECONDS = 8.0
+EFFECTS = ("sfx", "beatAccent", "filmLook")  # selection "effects": {이름: true} — 계획 6
+BEHIND_TITLE_MAX = 16
+ACCENT_EVERY, ACCENT_MAX, ACCENT_TAIL = 2, 8, 0.5  # 박자 강조: 드롭부터 다운비트 2개(=2마디)마다, 최대 8번, 아웃트로 0.5초 전까지
 OUTRO_SECONDS = 11.0  # 아웃트로: 글씨 → 8초에 글씨가 사라짐 → 9초부터 화면이 어두워짐
 MIN_INTRO_SECONDS = 1.5
 CARD_SECONDS = 11.0  # 인트로/아웃트로 카드 mp4 길이 (카드 템플릿 data-duration과 같아야 함)
@@ -293,6 +296,12 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
         if sum(t in fade for t in TRANSITIONS) > 1:
             raise ValueError(f"items[{k}]: 전환은 dissolve·blur·whip·wipe 중 하나만 쓸 수 있습니다")
         if c["type"] == "photo":
+            bt = sel.get("behindTitle")  # 인물 뒤 글자: 사진 → 큰 글자 → 사람만 오려낸 사진 (effects, 계획 6)
+            if bt is not None and not (isinstance(bt, str) and 1 <= len(bt.strip()) <= BEHIND_TITLE_MAX):
+                raise ValueError(f"items[{k}]: behindTitle은 1~{BEHIND_TITLE_MAX}자 글자여야 합니다 (사람 뒤에 깔리는 큰 제목): {bt!r}")
+            if bt:
+                fade["behindTitle"] = bt.strip()
+                fade["solo"] = True  # 분할 화면으로 묶지 않는다
             kb = sel.get("kenBurns")
             if kb is not None and kb not in KEN_BURNS_ANY:
                 raise ValueError(f"items[{k}]: kenBurns는 {KEN_BURNS_ANY} 중 하나여야 합니다: {kb!r}")
@@ -300,7 +309,7 @@ def resolve_items(selection: dict, candidates: list[dict], highlights: dict) -> 
             if pb is not None and (isinstance(pb, bool) or not isinstance(pb, int) or pb <= 0):
                 raise ValueError(f"items[{k}]: photoBeats는 양의 정수여야 합니다: {pb!r}")
             items.append({"type": "photo", "src": c["file"], **({"portrait": True} if c.get("height", 0) > c.get("width", 0) else {}),
-                          **({"solo": True} if sel.get("solo") or pb else {}),
+                          **({"solo": True} if sel.get("solo") or pb or fade.pop("solo", False) else {}),
                           **({"photoBeats": pb} if pb else {}), **({"kenBurns": kb} if kb else {}), **fade})
             continue
         sug = highlights.get(c["file"], {}).get("suggested") or {"in": 0.0, "out": min(4.0, c["duration"]), "liveAudio": False}
@@ -383,6 +392,35 @@ def build_format(fmt: str, items: list[dict], music: dict, cards: dict, photo_se
         total = end
     return {"width": spec["width"], "height": spec["height"], "musicStart": m_start,
             "musicEnd": round(m_start + total, 3), "musicFadeEnd": fade_end, "shots": timeline, "dropped": dropped}
+
+
+def resolve_effects(selection: dict) -> dict:
+    fx = selection.get("effects", {})
+    if not (isinstance(fx, dict) and all(k in EFFECTS and isinstance(v, bool) for k, v in fx.items())):
+        raise ValueError(f'selection.json의 effects는 {{"이름": true}} 객체여야 합니다 (이름: {", ".join(EFFECTS)}): {fx!r}')
+    return {k: v for k, v in fx.items() if v}
+
+
+def effect_cues(shots: list[dict], music: dict, m_start: float, final: float | None) -> dict:
+    """영상 기준 초: 전환(효과음 휙), 드롭(마지막 후렴 첫 다운비트, 없으면 마지막 후렴 추정 → 가까운 다운비트), 박자 강조."""
+    transitions = []
+    for s in shots[1:]:
+        kind = next((t for t in TRANSITIONS if s.get(t)), None)
+        if kind:
+            v = s[kind]
+            transitions.append({"t": round(s["start"] - (v / 2 if kind in ("blur", "whip") else 0), 3), "kind": kind, "len": v})
+    lo = shots[0]["end"] if shots and shots[0]["type"] == "clip" else 0.0
+    hi = next((s["start"] for s in reversed(shots[1:]) if s["type"] == "clip"), shots[-1]["end"]) - ACCENT_TAIL
+    song = final if final is not None else (music.get("chorus") or [None])[-1]
+    db = music.get("downbeats") or []
+    if song is not None and db:
+        song = min(db, key=lambda d: abs(d - song))
+    drop = round(song - m_start, 3) if song is not None and lo <= song - m_start < hi else None
+    accents = []
+    if drop is not None:
+        after = [d - m_start for d in db if d >= song - 1e-6]
+        accents = [round(t, 3) for t in after[::ACCENT_EVERY] if t < hi][:ACCENT_MAX]
+    return {"transitions": transitions, "accents": accents, "drop": drop}
 
 
 def resolve_credits(selection: dict, candidates: list[dict]) -> dict | None:
@@ -472,7 +510,11 @@ def build_storyboard(selection: dict, candidates: list[dict], highlights: dict, 
     pg = selection.get("photoGroup", 0)
     if isinstance(pg, bool) or not isinstance(pg, int) or pg == 1 or not 0 <= pg <= 3:
         raise ValueError(f"selection.json의 photoGroup은 0(끔) 또는 2~3이어야 합니다 (유튜브에서 이웃한 사진을 한 화면에 묶는 최대 장수): {pg!r}")
+    effects = resolve_effects(selection)
+    plans = {f: build_format(f, items, music, cards[f], pace.get(f), credits if f == "youtube" else None, pg, float(od)) for f in formats}
+    if effects:
+        for p in plans.values():
+            p["cues"] = effect_cues(p["shots"], music, p["musicStart"], sections.get("마지막후렴"))
     return {"fps": FPS, "title": selection.get("title", ""), "ending": selection.get("ending", ""),
-            "music": music_src, "sections": dict(sections, ignored=ignored),
-            "formats": {f: build_format(f, items, music, cards[f], pace.get(f), credits if f == "youtube" else None, pg, float(od))
-                        for f in formats}}
+            "music": music_src, "sections": dict(sections, ignored=ignored), **({"effects": effects} if effects else {}),
+            "formats": plans}

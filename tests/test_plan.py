@@ -589,3 +589,61 @@ def test_clamped_freeze_never_reads_past_source():
 def test_speedup_on_short_clip_slows_to_fit_source():
     s = plan.place([_vid(**{"in": 0.0, "out": 1.5, "duration": 1.5}, speed=4)], FX_BEATS, 0.0, 20.0, 4)[0][0]
     assert s["out"] <= 1.5 and s["speed"] < 4 and s["out"] - s["in"] == pytest.approx((s["end"] - s["start"]) * s["speed"])
+
+
+# ---- 효과 (계획 6) ----
+from pipeline import plan
+
+
+def test_effects_off_leave_storyboard_unchanged():
+    sel = {"formats": ["youtube"], "items": [{"id": 0}, {"id": 1}]}
+    sb = build_storyboard(sel, CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS})
+    assert "effects" not in sb and "cues" not in sb["formats"]["youtube"]
+
+
+@pytest.mark.parametrize("fx", [{"sparkle": True}, {"sfx": 1}, ["sfx"]])
+def test_effects_rejects_unknown_or_non_bool(fx):
+    with pytest.raises(ValueError, match="effects"):
+        plan.resolve_effects({"effects": fx})
+
+
+def test_cues_transitions_drop_and_accents():
+    shots = [{"type": "clip", "start": 0.0, "end": 8.0},
+             {"type": "photo", "start": 8.0, "end": 10.0},
+             {"type": "photo", "start": 10.0, "end": 12.0, "whip": 0.4},
+             {"type": "photo", "start": 12.0, "end": 40.0, "dissolve": 0.6},
+             {"type": "clip", "start": 40.0, "end": 51.0}]
+    music = dict(MUSIC, downbeats=[2.0 * k for k in range(60)])     # 2초마다 다운비트 (곡 기준)
+    c = plan.effect_cues(shots, music, m_start=0.0, final=20.0)
+    assert c["transitions"] == [{"t": 9.8, "kind": "whip", "len": 0.4}, {"t": 12.0, "kind": "dissolve", "len": 0.6}]
+    assert c["drop"] == 20.0
+    assert c["accents"] == [20.0, 24.0, 28.0, 32.0, 36.0]           # 2마디마다, 아웃트로 카드 0.5초 전까지
+
+
+def test_cues_drop_falls_back_to_last_chorus_and_shifts_for_reels():
+    shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 30.0}, {"type": "clip", "start": 30.0, "end": 41.0}]
+    music = dict(MUSIC, chorus=[60.0, 75.3], downbeats=[60.0 + 2.0 * k for k in range(30)])
+    c = plan.effect_cues(shots, music, m_start=60.0, final=None)      # 릴스: 영상 0초 = 곡 60초. 후렴 75.3 → 가까운 다운비트 76
+    assert c["drop"] == 16.0 and c["accents"][:2] == [16.0, 20.0]
+
+
+def test_cues_without_usable_drop_have_no_accents():
+    shots = [{"type": "clip", "start": 0.0, "end": 8.0}, {"type": "photo", "start": 8.0, "end": 12.0}, {"type": "clip", "start": 12.0, "end": 23.0}]
+    c = plan.effect_cues(shots, dict(MUSIC, chorus=[]), m_start=0.0, final=200.0)
+    assert c["drop"] is None and c["accents"] == []
+
+
+def test_storyboard_with_effects_has_cues_and_behind_title_photo():
+    sel = {"formats": ["youtube"], "effects": {"beatAccent": True, "filmLook": True},
+           "items": [{"id": 0, "behindTitle": "인왕산"}, {"id": 1}]}
+    sb = build_storyboard(sel, CANDS, HL, MUSIC, "music/s.mp3", {"youtube": CARDS})
+    assert sb["effects"] == {"beatAccent": True, "filmLook": True}
+    assert set(sb["formats"]["youtube"]["cues"]) == {"transitions", "accents", "drop"}
+    photo_shot = next(s for s in sb["formats"]["youtube"]["shots"] if s.get("behindTitle"))
+    assert photo_shot["behindTitle"] == "인왕산" and photo_shot["type"] == "photo"
+
+
+@pytest.mark.parametrize("bt", ["", "가" * 17, 3])
+def test_behind_title_text_is_checked(bt):
+    with pytest.raises(ValueError, match="behindTitle"):
+        resolve_items({"items": [{"id": 0, "behindTitle": bt}]}, CANDS, HL)
